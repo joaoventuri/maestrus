@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="assets/logo.png" alt="Maestrus" width="110"/>
+<img src="assets/logo-card.svg" alt="Maestrus" width="180"/>
 
-# Maestrus Self-Host
+# Maestrus
 
 **The conductor for your AI coding agents — on your own server.**
 
@@ -13,8 +13,6 @@ with sessions that **never die when your PC sleeps**.
 [![Docker](https://img.shields.io/badge/Docker-one_command-ff8a3d?style=flat-square&logo=docker&logoColor=white)](#-quick-start)
 [![Platforms](https://img.shields.io/badge/Web_·_PWA_·_Win_·_macOS_·_Linux-16161b?style=flat-square&labelColor=ff8a3d)](#-connect-from-anywhere)
 [![Bring your own Claude](https://img.shields.io/badge/AI-your_own_Claude_account-ff8a3d?style=flat-square)](#-your-ai-your-account)
-
-<img src="assets/hero.svg" alt="Maestrus orchestrating multiple projects from any device" width="880"/>
 
 *One command. One port. Your server. Your Claude account.*
 
@@ -49,8 +47,8 @@ middleman, no markup, no monthly fee.
 ## ⚡ Quick start
 
 ```bash
-git clone https://github.com/joaoventuri/maestrus-selfhost
-cd maestrus-selfhost
+git clone https://github.com/joaoventuri/maestrus
+cd maestrus
 cp .env.example .env        # set a strong SELFHOST_SECRET  (openssl rand -hex 32)
 docker compose up -d
 ```
