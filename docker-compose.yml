@@ -1,0 +1,41 @@
+# Maestrus Self-Host — the full Maestrus on YOUR machine, behind one port.
+# A single port (default 8090) serves EVERYTHING: web app, PWA and the relay.
+#
+#   cp .env.example .env      # set a strong SELFHOST_SECRET
+#   docker compose up -d
+#   # open http://YOUR_IP:8090       (web)
+#   #      http://YOUR_IP:8090/app   (PWA)
+#
+# No cloud, no billing, no accounts: access is gated by SELFHOST_SECRET.
+# The AI is YOURS — on first access you connect your Claude account (OAuth)
+# or provide your own Anthropic API key.
+services:
+  relay:
+    image: ghcr.io/joaoventuri/maestrus-relay:latest
+    restart: unless-stopped
+    environment:
+      - PORT=8790
+      - RELAY_SECRET=${SELFHOST_SECRET}
+    expose:
+      - "8790"          # internal only: maestrus proxies it at /relay
+
+  maestrus:
+    image: ghcr.io/joaoventuri/maestrus-server:latest
+    restart: unless-stopped
+    depends_on: [relay]
+    environment:
+      - MAESTRUS_SELFHOST=1
+      - MAESTRUS_SELFHOST_SECRET=${SELFHOST_SECRET}
+      - MAESTRUS_RELAY_URL=ws://relay:8790
+      - MAESTRUS_DATA_DIR=/data
+      - MAESTRUS_PORT=8090
+      - MAESTRUS_USER_ID=selfhost
+      - MAESTRUS_DEVICE_ID=selfhost-main
+      - MAESTRUS_HOST_NAME=${HOST_NAME:-My Maestrus}
+    volumes:
+      - maestrus-data:/data
+    ports:
+      - "${MAESTRUS_PORT:-8090}:8090"     # the ONLY port you expose
+
+volumes:
+  maestrus-data:
