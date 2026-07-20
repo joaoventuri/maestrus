@@ -1,0 +1,10 @@
+node_modules/
+dist-renderer/
+dist-mobile/
+dist-web/
+dist-app/
+dist-asar/
+vendor/
+.env
+*.log
+.DS_Store

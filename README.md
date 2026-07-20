@@ -175,6 +175,35 @@ docker run --rm -v maestrus-data:/data -v "$PWD":/backup alpine \
   **Remote Access → Connect to my server**, paste URL + secret. It reconnects
   automatically on every launch.
 
+## 📂 Source code & building from source
+
+This repo ships the **real source** — server, relay, shared backend and all
+client apps (BSL 1.1 licensed):
+
+```
+maestrus-server/   Headless orchestrator (the Docker image entrypoint)
+relay/             WebSocket relay (HS256 tokens, host/client rooms)
+electron/          Shared backend: Claude spawn/stream, projects, sessions,
+                   skills, agents, MCP, multi-account, self-host mode
+renderer/          React UI — web app, installable PWA and desktop windows
+scripts/           Build helpers (runtime bundling for desktop installers)
+```
+
+Build everything yourself:
+
+```bash
+npm install
+npm run build:web && npm run build:mobile         # web + PWA bundles
+docker build -f maestrus-server/Dockerfile -t maestrus-server:local .
+docker build -f relay/Dockerfile -t maestrus-relay:local relay
+# then point docker-compose.yml at your :local tags
+
+# desktop apps (optional)
+npm run build:mac      # macOS .dmg
+npm run build:win      # Windows .exe
+npm run build:linux    # Linux .AppImage
+```
+
 ## 📜 License
 
 **Business Source License 1.1** — free to use, modify and run, including

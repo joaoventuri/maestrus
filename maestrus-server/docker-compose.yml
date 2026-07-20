@@ -1,0 +1,45 @@
+# docker-compose.yml — dev environment do container user.
+#
+# Roda 1 instância pra desenvolvimento local. Em prod, o control plane
+# (maestrus.cloud) faz `docker compose -p user-{userId}` OU orquestra via
+# API (Docker daemon do VPS-host / Nomad / Fly.io).
+
+services:
+  maestrus-server:
+    build:
+      context: ..
+      dockerfile: maestrus-server/Dockerfile
+    container_name: maestrus-server-dev
+    restart: unless-stopped
+    environment:
+      MAESTRUS_USER_ID: dev-local
+      MAESTRUS_LICENSE_KEY: ${MAESTRUS_LICENSE_KEY:-}
+      MAESTRUS_RELAY_URL: ${MAESTRUS_RELAY_URL:-wss://maestrus.cloud/relay}
+      MAESTRUS_DATA_DIR: /data
+      MAESTRUS_PORT: 8090
+      MAESTRUS_LOG: ${MAESTRUS_LOG:-info}
+      MAESTRUS_ADMIN_TOKEN: ${MAESTRUS_ADMIN_TOKEN:-}
+      MAESTRUS_ANTHROPIC_KEY: ${MAESTRUS_ANTHROPIC_KEY:-}
+      MAESTRUS_OPENAI_KEY: ${MAESTRUS_OPENAI_KEY:-}
+    ports:
+      - "8090:8090"
+    volumes:
+      - maestrus-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    # Cap de recursos (Cloud Basic: 4GB/2vCPU)
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+volumes:
+  maestrus-data:
+    driver: local

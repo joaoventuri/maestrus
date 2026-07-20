@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#141414" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Maestrus" />
+    <link rel="manifest" href="/app/manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="/app/icon-192.png" />
+    <link rel="apple-touch-icon" href="/app/icon-180.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
+    <title>Maestrus</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/mobile-main.tsx"></script>
+    <script>
+      // Registra o Service Worker pra GARANTIR atualizacao automatica do PWA
+      // instalado. Sem ele, iOS/Android cacheia agressivo e a UI fica presa
+      // numa versao antiga. O SW faz network-first pro HTML (sempre busca
+      // novo) e cache-first pros bundles com hash (zero rede em assets
+      // imutaveis). skipWaiting + clients.claim → toma controle imediato e
+      // qualquer update entra na proxima abertura sem ritual.
+      // Login (localStorage/cookies/IndexedDB) NUNCA e tocado.
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/app/sw.js', { scope: '/app/' })
+            .then(reg => {
+              // Se um novo SW assumiu, recarrega a pagina UMA vez pra pegar
+              // os novos bundles (o SW novo invalida os caches).
+              let refreshing = false;
+              navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (refreshing) return; refreshing = true;
+                location.reload();
+              });
+              // Polling leve: a cada 5min checa se ha nova versao.
+              setInterval(() => reg.update().catch(() => {}), 5 * 60 * 1000);
+            })
+            .catch(err => console.warn('[maestrus] SW register failed:', err));
+        });
+      }
+    </script>
+  </body>
+</html>

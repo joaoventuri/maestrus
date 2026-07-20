@@ -1,0 +1,134 @@
+{
+  "name": "maestrus",
+  "version": "0.2.58",
+  "maestrus": {
+    "lastBundledClaudeCli": "2.1.161"
+  },
+  "description": "Maestrus â€” orquestrador desktop pra Claude Code com sync em Google Drive",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k -n VITE,ELECTRON -c blue,magenta \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "vite",
+    "dev:electron": "wait-on http://localhost:5173 && cross-env MAESTRUS_DEV=1 electron .",
+    "build:renderer": "vite build",
+    "build": "npm run build:renderer && electron-builder",
+    "build:win": "npm run build:renderer && electron-builder --win --x64",
+    "build:mac": "npm run build:renderer && electron-builder --mac",
+    "publish:asar": "node scripts/publish-asar.js",
+    "publish:asar:upload": "node scripts/publish-asar.js --upload",
+    "build:mobile": "vite build --config vite.mobile.config.ts",
+    "build:web": "vite build --config vite.web.config.ts",
+    "start": "electron .",
+    "build:linux": "npm run build:renderer && electron-builder --linux --x64"
+  },
+  "author": "JoÃ£o Venturi",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.3",
+    "ssh2": "^1.17.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.184.1",
+    "@vitejs/plugin-react": "^4.3.0",
+    "@xenova/transformers": "^2.17.2",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "jsqr": "^1.4.0",
+    "lucide-react": "^1.16.0",
+    "marked": "^13.0.0",
+    "png-to-ico": "^3.0.1",
+    "qrcode.react": "^4.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "sharp": "^0.34.5",
+    "three": "^0.184.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0",
+    "vosk-browser": "^0.0.8",
+    "wait-on": "^8.0.0"
+  },
+  "build": {
+    "appId": "cloud.maestrus.app",
+    "productName": "Maestrus",
+    "directories": {
+      "output": "dist-app"
+    },
+    "compression": "maximum",
+    "electronLanguages": [
+      "en-US",
+      "pt-BR",
+      "es"
+    ],
+    "beforePack": "scripts/before-pack.js",
+    "afterPack": "scripts/after-pack-mac.js",
+    "extraResources": [
+      {
+        "from": "vendor/runtime",
+        "to": "runtime",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://maestrus.cloud/downloads/"
+      }
+    ],
+    "files": [
+      "electron/**/*",
+      "dist-renderer/**/*",
+      "renderer/assets/**",
+      "relay/link.js",
+      "relay/protocol.js",
+      "package.json",
+      "!node_modules/@xenova/**",
+      "!node_modules/three/**",
+      "!node_modules/lucide-react/**",
+      "!node_modules/qrcode.react/**",
+      "!node_modules/jsqr/**",
+      "!node_modules/vosk-browser/**",
+      "!node_modules/onnxruntime-web/**",
+      "!node_modules/onnxruntime-node/**",
+      "!node_modules/sharp/**",
+      "!node_modules/marked/**",
+      "!node_modules/png-to-ico/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "renderer/assets/icon.ico",
+      "artifactName": "maestrus-win-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "shortcutName": "Maestrus",
+      "installerIcon": "renderer/assets/icon.ico",
+      "uninstallerIcon": "renderer/assets/icon.ico",
+      "installerHeaderIcon": "renderer/assets/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "renderer/assets/icon.png",
+      "category": "public.app-category.developer-tools",
+      "artifactName": "maestrus-mac-${version}.${ext}",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "renderer/assets/icon.png"
+    }
+  }
+}
