@@ -80,6 +80,9 @@ async function selfhostResume(): Promise<any> {
 }
 
 async function api(action: string, body: any): Promise<any> {
+  // SELF-HOST: nenhuma chamada sai pro maestrus.cloud — sem conta, sem cloud,
+  // sem billing. Tudo resolve no próprio servidor (host RPC / /selfhost/*).
+  if (selfhostCfg && (selfhostCfg as any).selfhost) return { ok: false, error: 'selfhost_no_cloud' };
   const r = await fetch(`${API_BASE}?action=${action}`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
   });
@@ -523,22 +526,42 @@ async function doCreateProject(input: any): Promise<any> {
       // host caiu no meio → tenta o resgate do container abaixo
     }
   }
-  // Conta TEM container mas o host não respondeu → acorda (container_status
-  // auto-desperta instância suspensa) e tenta de novo, em vez de cair no
-  // sandbox legado que responderia cloud_required.
+  // Host não respondeu → resolve via CONTAINER da conta, sempre. O sandbox
+  // legado (cloud_start) NÃO é mais fallback deste fluxo: ele exige plano pago
+  // e mascarava tudo como cloud_required mesmo com container/trial disponível.
   const a = getAccount();
-  if (a) {
-    let st: any = null;
-    try { st = await api('container_status', { license_key: a.licenseKey }); } catch {}
-    if (st && st.exists) {
-      await autoConnectCloud().catch(() => {});
-      const d2 = Date.now() + 25000;
-      while (Date.now() < d2 && !clientState.connected) await new Promise((r) => setTimeout(r, 400));
-      if (link && hostId && clientState.connected) return createOnHost(input);
+  if (!a) throw new Error('not_logged_in');
+  // 1) status com retry — falha transitória de rede não muda a decisão
+  let st: any = null;
+  for (let i = 0; i < 3; i++) {
+    try { st = await api('container_status', { license_key: a.licenseKey }); } catch { st = null; }
+    if (st && st.ok !== false) break;
+    await new Promise((r) => setTimeout(r, 800));
+  }
+  // 2) sem instância ainda → provisiona AGORA (trial cobre conta nova): o
+  //    primeiro projeto liga o container sozinho, sem tela intermediária.
+  if (!st || !st.exists) {
+    const pr: any = await api('container_provision', { license_key: a.licenseKey }).catch(() => null);
+    if (pr && pr.ok === false) {
+      if (pr.error === 'trial_expired' || pr.error === 'cloud_required') throw new Error('cloud_required');
       throw new Error('container_starting');
     }
   }
-  return doCreateCloudProject(input);
+  // 3) espera ficar de pé (status auto-desperta suspenso), conecta e cria
+  const bootDl = Date.now() + 90000;
+  while (Date.now() < bootDl) {
+    let s2: any = null;
+    try { s2 = await api('container_status', { license_key: a.licenseKey }); } catch {}
+    const cs = s2 && s2.container && s2.container.status;
+    if (s2 && s2.exists && cs === 'running') break;
+    if (cs === 'error') throw new Error('container_starting');
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+  await autoConnectCloud().catch(() => {});
+  const d2 = Date.now() + 25000;
+  while (Date.now() < d2 && !clientState.connected) await new Promise((r) => setTimeout(r, 400));
+  if (link && hostId && clientState.connected) return createOnHost(input);
+  throw new Error('container_starting');
 }
 
 async function doCreateCloudProject(input: any): Promise<any> {
@@ -610,8 +633,11 @@ async function doDiscover(): Promise<any> {
   const target = machine || container;
   if (!target) return { ok: true, found: 0 };
   const did = didOf(target);
-  await doConnectHost(did, target.name || (machine ? 'Máquina' : 'Maestrus Cloud'));
-  return { ok: true, found: 1, hostName: target.name, cloud: !machine };
+  // Container SEMPRE aparece como "Maestrus Cloud" — nunca o default genérico
+  // "Host" (que confunde: parece uma máquina desconhecida).
+  const label = machine ? (target.name || 'Máquina') : 'Maestrus Cloud';
+  await doConnectHost(did, label);
+  return { ok: true, found: 1, hostName: label, cloud: !machine };
 }
 
 // Descobre e conecta no container cloud do user (usado pós-onboarding no web app,

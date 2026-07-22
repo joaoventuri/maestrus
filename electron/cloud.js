@@ -224,7 +224,11 @@ async function relayToken(role) {
   try {
     const selfhost = require('./selfhost');
     if (selfhost.isEnabled()) {
-      const token = selfhost.signRelayToken(getDeviceId(), role);
+      // HOST assina com o MAESTRUS_DEVICE_ID fixo (ex: selfhost-main) — é o
+      // alvo que os clients usam nos RPCs. Com getDeviceId() (UUID aleatório)
+      // o host registrava com outro id e todo RPC dava target-offline.
+      const did = role === 'host' ? (process.env.MAESTRUS_DEVICE_ID || getDeviceId()) : getDeviceId();
+      const token = selfhost.signRelayToken(did, role);
       const url = process.env.MAESTRUS_RELAY_URL || 'ws://localhost:8790';
       return token ? { ok: true, token, url } : { ok: false, error: 'selfhost_sign_failed' };
     }

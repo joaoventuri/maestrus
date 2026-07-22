@@ -379,7 +379,13 @@ const server = http.createServer((req, res) => {
     return void serveStatic(res, PWA_DIR, url.pathname.replace(/^\/app/, '') || '/', ['index.html', 'mobile.html']);
   }
   if (WEB_DIR && req.method === 'GET') {
-    return void serveStatic(res, WEB_DIR, url.pathname === '/' ? '/' : url.pathname, ['index.html', 'web.html']);
+    // O bundle web é buildado com base /web/ (layout do maestrus.cloud). No
+    // self-host o webroot vive na RAIZ — sem este strip, /web/assets/*.js caía
+    // no fallback SPA (text/html) e a página ficava em branco.
+    const rel = url.pathname.startsWith('/web/') || url.pathname === '/web'
+      ? (url.pathname.replace(/^\/web/, '') || '/')
+      : (url.pathname === '/' ? '/' : url.pathname);
+    return void serveStatic(res, WEB_DIR, rel, ['index.html', 'web.html']);
   }
 
   res.writeHead(404); res.end('{"error":"not_found"}');
@@ -406,9 +412,14 @@ if (WebSocketServer) {
         try { upstream = new WsClient(RELAY_INTERNAL + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '')); }
         catch { try { ws.close(); } catch {} return; }
         const q = [];
+        // ws (Node) entrega TEXTO como Buffer; repassar o Buffer cru vira frame
+        // BINÁRIO — o browser recebe Blob, o parseFrame descarta e o client
+        // fica "surdo" (outbound ok, inbound nunca chega). Converte pra string
+        // quando o frame original era texto.
+        const asWire = (m, isBinary) => (isBinary ? m : m.toString('utf8'));
         upstream.on('open', () => { for (const m of q) { try { upstream.send(m); } catch {} } q.length = 0; });
-        ws.on('message', (m) => { if (upstream.readyState === 1) { try { upstream.send(m); } catch {} } else q.push(m); });
-        upstream.on('message', (m) => { try { ws.send(m); } catch {} });
+        ws.on('message', (m, isBinary) => { const w = asWire(m, isBinary); if (upstream.readyState === 1) { try { upstream.send(w); } catch {} } else q.push(w); });
+        upstream.on('message', (m, isBinary) => { try { ws.send(asWire(m, isBinary)); } catch {} });
         const bye = () => { try { ws.close(); } catch {} try { upstream.close(); } catch {} };
         ws.on('close', bye); ws.on('error', bye); upstream.on('close', bye); upstream.on('error', bye);
       });
