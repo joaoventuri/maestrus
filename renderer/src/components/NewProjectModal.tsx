@@ -17,6 +17,8 @@ export default function NewProjectModal({ onClose, onCreated }: Props) {
   const [name, setName] = useState('');
   const [source, setSource] = useState<ProjectSource>('github');
   const [repoUrl, setRepoUrl] = useState('');
+  const [gitToken, setGitToken] = useState('');
+  const [showToken, setShowToken] = useState(false);
   const [localPath, setLocalPath] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,12 +114,21 @@ export default function NewProjectModal({ onClose, onCreated }: Props) {
         name: name.trim(),
         source,
         repoUrl: repoUrl.trim() || null,
+        gitToken: gitToken.trim() || null,
         localPath: localPath || null,
         mountPath: null,
       });
       onCreated(project);
     } catch (e: any) {
-      setError(e.message);
+      const m = String(e?.message || '');
+      if (m === 'repo_auth_required') setShowToken(true);
+      setError(
+        m === 'repo_auth_required' ? t('newProject.errRepoAuth')
+        : m === 'container_starting' ? t('newProject.errContainerStarting')
+        : m === 'cloud_required' ? t('newProject.errCloudRequired')
+        : m.startsWith('clone_failed') ? t('newProject.errClone')
+        : e.message,
+      );
     } finally {
       setBusy(false);
     }
@@ -181,6 +192,26 @@ export default function NewProjectModal({ onClose, onCreated }: Props) {
                 placeholder="https://github.com/user/repo.git"
               />
               <small>{t('newProject.repoHint')}</small>
+            </label>
+          )}
+
+          {source === 'github' && !showToken && (
+            <p className="hint" style={{ marginTop: -6 }}>
+              <Lock size={12} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+              <a href="#" onClick={(e) => { e.preventDefault(); setShowToken(true); }}>{t('newProject.privateRepo')}</a>
+            </p>
+          )}
+          {source === 'github' && showToken && (
+            <label className="field">
+              <span>{t('newProject.gitToken')}</span>
+              <input
+                type="password"
+                value={gitToken}
+                onChange={(e) => setGitToken(e.target.value)}
+                placeholder="ghp_… / github_pat_…"
+                autoComplete="off"
+              />
+              <small>{t('newProject.gitTokenHint')}</small>
             </label>
           )}
 

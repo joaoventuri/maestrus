@@ -186,7 +186,19 @@ if (orchestrateServer) {
     try {
       const info = await orchestrateServer.start({
         projectStore,
-        dispatchFn: async (targetId, prompt, opts) => claudePty.dispatchOneShot(projectStore.get(targetId), prompt, opts || {}),
+        // target chega como OBJETO (orchestrate-server resolve antes — inclusive
+        // sub-conversas/forks via id composto). Sem wait, dispara pelo caminho
+        // normal do chat (a resposta aparece no chat do alvo); wait=true = one-shot.
+        dispatchFn: async (target, prompt, opts) => {
+          const proj = typeof target === 'string' ? projectStore.get(target) : target;
+          if (!proj) throw new Error('project not found');
+          const o = opts || {};
+          if (!o.wait) {
+            Promise.resolve(claudePty.send(proj, prompt)).catch((e) => log('warn', 'dispatch send falhou:', e.message));
+            return { dispatched: true, async: true, text: `Disparado para "${proj.name}". Rodando em segundo plano — a resposta aparece no chat do projeto.` };
+          }
+          return claudePty.dispatchOneShot(proj, prompt, o);
+        },
         getProjects: () => projectStore.list(),
         getProject: (id) => projectStore.get(id),
         browser: null, // headless: sem browser embutido (fase 2: playwright opcional)

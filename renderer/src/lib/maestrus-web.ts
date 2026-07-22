@@ -329,7 +329,7 @@ const isCloudHost = (did: string | null) => !!did && did.startsWith('cloud-');
 // Engine respeita o PROJETO (não força mais 'cloud' pro container): o container
 // tem o Claude CLI próprio (OAuth do onboarding) — Claude CLI × Claude API são
 // ambos válidos lá. Relíquia da era do proxy removida.
-function tag(p: any) { const cloud = isCloudHost(hostId); return { id: `remote:${hostId}:${p.id}`, name: p.name, source: cloud ? 'cloud' : (p.source || 'production'), realSource: p.source || 'local', cloud, remoteHostId: hostId, remoteHostName: hostName, remoteProjectId: p.id, model: p.model || 'default', thinkingMode: p.thinkingMode || 'medium', permissionMode: p.permissionMode || 'default', engine: p.engine || 'claude', repoUrl: null, localPath: null, mountPath: null, sessionId: p.sessionId || null, codeDir: null, driveDir: null, sessionDir: null, createdAt: 0, updatedAt: 0 }; }
+function tag(p: any) { const cloud = isCloudHost(hostId); return { id: `remote:${hostId}:${p.id}`, name: p.name, source: cloud ? 'cloud' : (p.source || 'production'), realSource: p.source || 'local', cloud, remoteHostId: hostId, remoteHostName: hostName, remoteProjectId: p.id, model: p.model || 'default', thinkingMode: p.thinkingMode || 'medium', permissionMode: p.permissionMode || 'default', engine: p.engine || 'claude', repoUrl: null, localPath: null, mountPath: null, sessionId: p.sessionId || null, codeDir: null, driveDir: null, sessionDir: null, createdAt: 0, updatedAt: 0, conversations: Array.isArray(p.conversations) ? p.conversations : [] }; }
 const parseId = (id: string) => { const m = /^remote:([^:]+):(.+)$/.exec(id || ''); return m ? { hostId: m[1], projectId: m[2] } : null; };
 
 async function refreshProjects() {
@@ -358,7 +358,9 @@ function startClientLink(url: string, token: string) {
           const pid = p.project.id;
           cachedProjects = cachedProjects.map((cp) => {
             if (cp.remoteProjectId !== pid) return cp;
-            return { ...cp, model: p.project.model || cp.model, thinkingMode: p.project.thinkingMode || cp.thinkingMode, permissionMode: p.project.permissionMode || cp.permissionMode, engine: p.project.engine || cp.engine };
+            // Mescla também nome e CONVERSAS (forks): mudanças feitas em outro
+            // device (desktop/PWA) refletem aqui ao vivo, sem re-fetch.
+            return { ...cp, name: p.project.name || cp.name, model: p.project.model || cp.model, thinkingMode: p.project.thinkingMode || cp.thinkingMode, permissionMode: p.project.permissionMode || cp.permissionMode, engine: p.project.engine || cp.engine, conversations: Array.isArray(p.project.conversations) ? p.project.conversations : (cp as any).conversations };
           });
           emitProjectsChanged();
         }
@@ -487,6 +489,58 @@ function waitForFirstProject(timeoutMs: number): Promise<any> {
 // Cria um projeto CLOUD a partir de um nome (+ repo GitHub opcional). Sobe um
 // sandbox via cloud_start, ataca como host e devolve o projeto já conectado.
 // É o caminho de "novo projeto" do web (sem pasta local / sem desktop).
+// Cria um projeto. No modelo atual (container por usuário), o web está
+// conectado ao CONTAINER (host) — então cria o projeto DENTRO dele via RPC
+// (clona o GitHub lá, aparece na sidebar). Se não há host conectado, cai no
+// caminho legado do sandbox por projeto.
+async function createOnHost(input: any): Promise<any> {
+  const r: any = await link!.rpc('projects.create', input, 240000);
+  if (r && r.ok === false) throw new Error(r.error || 'create_failed');
+  if (r && (r.id || r.name)) {
+    await refreshProjects().catch(() => {});
+    const created = cachedProjects.find((p) => p.remoteProjectId === r.id);
+    return created || tag(r);
+  }
+  throw new Error('create_failed');
+}
+
+async function doCreateProject(input: any): Promise<any> {
+  // O clique em "criar" pode chegar antes do discovery do boot terminar de
+  // conectar no container/máquina. Garante o host PRIMEIRO — sem isso caía no
+  // sandbox legado (cloud_start), que exige plano pago e devolvia
+  // cloud_required mesmo com o container da conta no ar.
+  if (!(link && hostId && clientState.connected)) {
+    try { await ensureConnected(); } catch {}
+    const d = Date.now() + 15000;
+    while (Date.now() < d && !clientState.connected) await new Promise((r) => setTimeout(r, 300));
+  }
+  if (link && hostId && clientState.connected) {
+    try {
+      return await createOnHost(input);
+    } catch (e: any) {
+      // Erro real de criação → propaga (não cai no sandbox legado silenciosamente).
+      if (e && /clone_failed|name_required|create_failed|repo_auth_required/.test(String(e.message || ''))) throw e;
+      // host caiu no meio → tenta o resgate do container abaixo
+    }
+  }
+  // Conta TEM container mas o host não respondeu → acorda (container_status
+  // auto-desperta instância suspensa) e tenta de novo, em vez de cair no
+  // sandbox legado que responderia cloud_required.
+  const a = getAccount();
+  if (a) {
+    let st: any = null;
+    try { st = await api('container_status', { license_key: a.licenseKey }); } catch {}
+    if (st && st.exists) {
+      await autoConnectCloud().catch(() => {});
+      const d2 = Date.now() + 25000;
+      while (Date.now() < d2 && !clientState.connected) await new Promise((r) => setTimeout(r, 400));
+      if (link && hostId && clientState.connected) return createOnHost(input);
+      throw new Error('container_starting');
+    }
+  }
+  return doCreateCloudProject(input);
+}
+
 async function doCreateCloudProject(input: any): Promise<any> {
   const a = getAccount(); if (!a) throw new Error('not_logged_in');
   const base = String(input?.name || 'projeto').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
@@ -769,6 +823,11 @@ export function installMaestrusWeb() {
       // mesmo transporte do remote control: connectHost por device_id.
       openCloud: async (deviceId: string, name?: string) => doConnectHost(deviceId, name),
       devices: async () => { const a = getAccount(); if (!a) return { ok: false, devices: [] }; return api('devices', { license_key: a.licenseKey }); },
+      // Container 24/7 do usuário (aba "Maestrus Cloud"). Faltavam no web →
+      // a tela sempre mostrava erro mesmo com o container de pé.
+      containerStatus: async () => { const a = getAccount(); if (!a) return { ok: false }; return api('container_status', { license_key: a.licenseKey }); },
+      containerProvision: async () => { const a = getAccount(); if (!a) return { ok: false }; return api('container_provision', { license_key: a.licenseKey }); },
+      containerConnect: async () => autoConnectCloud(),
     },
     remote: {
       clientState: async () => ({ ...clientState }),
@@ -887,7 +946,7 @@ export function installMaestrusWeb() {
       },
       get: async (id: string) => (id === 'maestrus' ? (cachedProjects.find((p) => p.remoteProjectId === 'maestrus') ? { ...MAESTRO_STUB, cloudStatus: 'running' } : MAESTRO_STUB) : null) || cachedProjects.find((p) => p.id === id) || cachedStubs.find((p) => p.id === id) || null,
       // No web, "criar projeto" = criar um projeto CLOUD (sandbox), não pasta local.
-      create: async (input: any) => doCreateCloudProject(input),
+      create: async (input: any) => doCreateProject(input),
       import: noop, exportConfig: async () => null,
       // Excluir projeto cloud = cloud_delete no backend (tombstone + remove
       // container/volume). Antes era no-op → o projeto "voltava". Tira dos caches
@@ -910,6 +969,27 @@ export function installMaestrusWeb() {
         cachedProjects = cachedProjects.map((p) => p.id === id ? { ...p, ...patch } : p);
         // NUNCA retorna undefined (senão handleProjectUpdate quebra): fallback p/ stub/patch
         return updated ? tag(updated) : (cachedProjects.find((p) => p.id === id) || cachedStubs.find((p) => p.id === id) || { ...patch, id });
+      },
+    },
+    // Conversas (forks) por projeto — espelha o preload do desktop; roda no host.
+    conversations: {
+      create: async (projectId: string, title?: string, forkFromConvId?: string) => {
+        const r = parseId(projectId); if (!r || !link) throw new Error('not_connected');
+        const conv = await link.rpc('conversations.create', { projectId: r.projectId, title, forkFromConvId }, 15000);
+        await refreshProjects().catch(() => {}); emitProjectsChanged();
+        return conv;
+      },
+      rename: async (projectId: string, convId: string, title: string) => {
+        const r = parseId(projectId); if (!r || !link) throw new Error('not_connected');
+        const conv = await link.rpc('conversations.rename', { projectId: r.projectId, convId, title }, 15000);
+        await refreshProjects().catch(() => {}); emitProjectsChanged();
+        return conv;
+      },
+      delete: async (projectId: string, convId: string) => {
+        const r = parseId(projectId); if (!r || !link) throw new Error('not_connected');
+        const ok = await link.rpc('conversations.delete', { projectId: r.projectId, convId }, 15000);
+        await refreshProjects().catch(() => {}); emitProjectsChanged();
+        return ok;
       },
     },
     claude: {

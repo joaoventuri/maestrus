@@ -3060,3 +3060,41 @@ html, body, #root {
 .pw-mcp-dot.ok { background: #3dbf8c; box-shadow: 0 0 6px #3dbf8c; }
 .pw-mcp-dot.bad { background: #e06c75; }
 .pw-badge-cloud { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent); padding: 2px 7px; border-radius: 99px; margin-left: 8px; vertical-align: 1px; }
+
+/* ── Conversas (forks) por projeto: accordion + menu de contexto ─────────── */
+.nav-project-group { display: flex; flex-direction: column; }
+.nav-conv-chevron {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; margin-left: -4px; margin-right: -2px;
+  background: none; border: none; color: var(--text-dim); cursor: pointer;
+  border-radius: 4px; padding: 0; flex-shrink: 0;
+}
+.nav-conv-chevron:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.nav-item.nav-conv {
+  padding-left: 26px; position: relative; font-size: 12.5px;
+}
+.nav-item.nav-conv .nav-item-name { opacity: .92; }
+.nav-conv-line {
+  position: absolute; left: 15px; top: 0; bottom: 0; width: 1px;
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+}
+.nav-conv-icon { color: var(--text-dim); }
+.nav-rename-input {
+  flex: 1; min-width: 0; background: var(--bg); color: var(--text);
+  border: 1px solid var(--accent); border-radius: 6px; padding: 2px 6px;
+  font: inherit; font-size: 12.5px; outline: none;
+}
+.ctx-menu {
+  position: fixed; z-index: 1000; min-width: 190px;
+  background: var(--bg-elev, var(--bg2, #16161b)); border: 1px solid var(--border);
+  border-radius: 10px; padding: 5px; box-shadow: 0 12px 34px rgba(0,0,0,.45);
+  display: flex; flex-direction: column; gap: 1px;
+}
+.ctx-item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  background: none; border: none; color: var(--text); cursor: pointer;
+  font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 7px; text-align: left;
+}
+.ctx-item:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.ctx-item.danger { color: var(--error, #e06c75); }
+.ctx-item.danger:hover { background: color-mix(in srgb, #e06c75 14%, transparent); }

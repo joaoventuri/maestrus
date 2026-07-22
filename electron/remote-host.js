@@ -48,6 +48,7 @@ function safeProjects() {
         model: p.model || 'default', thinkingMode: p.thinkingMode || 'medium',
         permissionMode: p.permissionMode || 'default', engine: p.engine || 'claude',
         sessionId: p.sessionId || null,
+        conversations: (p.conversations || []).map((c) => ({ id: c.id, title: c.title, createdAt: c.createdAt })),
       }));
   } catch { return []; }
 }
@@ -97,6 +98,62 @@ async function handleRpc(f, reply, fail) {
     switch (channel) {
       case 'projects.list': return reply(safeProjects());
       case 'projects.get': return reply(projectStore.get(payload.id) || null);
+      // Cria um projeto DENTRO deste host (container/máquina). github → clona;
+      // empty → pasta vazia. É o caminho de "novo projeto" do web quando
+      // conectado no container do usuário (substitui o sandbox cloud legado).
+      case 'projects.create': {
+        try {
+          const input = payload || {};
+          if (!input.name) return reply({ ok: false, error: 'name_required' });
+          const proj = projectStore.createDraft(input);
+          const os = require('os');
+          const base = path.join(os.homedir(), '.maestrus', 'projects', proj.id, 'code');
+          fs.mkdirSync(path.dirname(base), { recursive: true });
+          if (input.source === 'github' && input.repoUrl) {
+            const cp = require('child_process');
+            const url = String(input.repoUrl);
+            // Repo privado: o token vira credencial git SALVA deste host
+            // (credential.helper store) — o clone funciona e as conversas do
+            // Maestrus (o Claude rodando aqui) ganham acesso ao git também,
+            // em todos os projetos, daqui pra frente.
+            if (input.gitToken) {
+              try {
+                let ghost = 'github.com';
+                try { ghost = new URL(url).host || 'github.com'; } catch {}
+                const tok = String(input.gitToken).trim();
+                const line = `https://x-access-token:${encodeURIComponent(tok)}@${ghost}`;
+                const credFile = path.join(os.homedir(), '.git-credentials');
+                let cur = ''; try { cur = fs.readFileSync(credFile, 'utf8'); } catch {}
+                // uma credencial por host git: substitui a antiga (token trocado)
+                const kept = cur.split('\n').filter((l) => l.trim() && !l.includes('@' + ghost));
+                kept.push(line);
+                fs.writeFileSync(credFile, kept.join('\n') + '\n', { mode: 0o600 });
+                cp.execFileSync('git', ['config', '--global', 'credential.helper', 'store'], { stdio: 'pipe' });
+              } catch {}
+            }
+            try {
+              cp.execFileSync('git', ['clone', '--depth', '1', url, base], {
+                stdio: 'pipe', timeout: 240000,
+                // sem terminal: falha rápido em vez de travar pedindo usuário
+                env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+              });
+            } catch (e) {
+              const msg = (e && (e.stderr ? e.stderr.toString() : e.message)) || 'clone_failed';
+              // Repo privado sem credencial (ou token inválido) → a UI pede o token.
+              if (/could not read Username|Authentication failed|Invalid username or (token|password)|terminal prompts disabled|Repository not found/i.test(msg)) {
+                return reply({ ok: false, error: 'repo_auth_required' });
+              }
+              return reply({ ok: false, error: 'clone_failed: ' + msg.slice(0, 240) });
+            }
+          } else {
+            fs.mkdirSync(base, { recursive: true });
+          }
+          proj.codeDir = base;
+          const saved = projectStore.save(proj);
+          try { broadcastProjectPatch(saved); } catch {}
+          return reply(saved);
+        } catch (e) { return reply({ ok: false, error: String(e && e.message || e) }); }
+      }
       case 'claude.loadHistory': {
         const p = projectStore.get(payload.projectId);
         if (!p) return reply([]);
@@ -134,14 +191,46 @@ async function handleRpc(f, reply, fail) {
       }
       case 'claude.stop': return reply(claudePty.kill(payload.projectId));
       case 'projects.patch': {
-        // permite o client remoto trocar modelo/thinking/engine/permissão do projeto
+        // permite o client remoto trocar modelo/thinking/engine/permissão/nome
         const allowed = {};
-        for (const k of ['model', 'thinkingMode', 'permissionMode', 'engine']) {
+        for (const k of ['model', 'thinkingMode', 'permissionMode', 'engine', 'name']) {
           if (payload.patch && payload.patch[k] !== undefined) allowed[k] = payload.patch[k];
         }
         const updated = projectStore.patch(payload.id, allowed);
         if (updated) broadcastProjectPatch(updated);
         return reply(updated);
+      }
+      // ─── Conversas (forks) por projeto — espelham conversations:* do main ──
+      case 'conversations.create': {
+        const p = projectStore.get(payload.projectId);
+        if (!p) return fail('Projeto não encontrado');
+        let forkFrom = null;
+        if (payload.forkFromConvId === 'main') forkFrom = p.sessionId || null;
+        else if (payload.forkFromConvId) {
+          const src = (projectStore.listConversations(payload.projectId) || []).find((c) => c.id === payload.forkFromConvId);
+          forkFrom = (src && (src.sessionId || src.forkFrom)) || null;
+        }
+        const conv = projectStore.createConversation(payload.projectId, { title: payload.title, forkFrom });
+        const next = projectStore.get(payload.projectId);
+        if (next) broadcastProjectPatch(next);
+        return reply(conv);
+      }
+      case 'conversations.rename': {
+        const conv = projectStore.patchConversation(payload.projectId, payload.convId, { title: payload.title });
+        const next = projectStore.get(payload.projectId);
+        if (next) broadcastProjectPatch(next);
+        return reply(conv);
+      }
+      case 'conversations.delete': {
+        claudePty.kill(payload.projectId + projectStore.CONV_SEP + payload.convId);
+        const conv = projectStore.deleteConversation(payload.projectId, payload.convId);
+        try {
+          const p = projectStore.get(payload.projectId);
+          if (p && conv && conv.sessionId) claudePty.deleteSessionFile(p, conv.sessionId);
+        } catch {}
+        const next = projectStore.get(payload.projectId);
+        if (next) broadcastProjectPatch(next);
+        return reply(!!conv);
       }
       case 'ping': return reply({ ok: true, t: Date.now() });
 

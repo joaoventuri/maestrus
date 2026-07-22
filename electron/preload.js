@@ -141,6 +141,13 @@ contextBridge.exposeInMainWorld('maestrus', {
       return () => ipcRenderer.removeListener('projects:changed', fn);
     },
   },
+  // Conversas (forks) por projeto — o id de chat de uma conversa é
+  // `<projectId>#<convId>` e funciona em claude.send/stop/loadHistory.
+  conversations: {
+    create: (projectId, title, forkFromConvId) => ipcRenderer.invoke('conversations:create', { projectId, title, forkFromConvId }),
+    rename: (projectId, convId, title) => ipcRenderer.invoke('conversations:rename', { projectId, convId, title }),
+    delete: (projectId, convId) => ipcRenderer.invoke('conversations:delete', { projectId, convId }),
+  },
   starter: {
     get: () => ipcRenderer.invoke('starter:get'),
     saveBat: (content) => ipcRenderer.invoke('starter:saveBat', content),

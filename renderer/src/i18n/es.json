@@ -227,7 +227,14 @@
     "errMount": "Selecciona la carpeta montada vía SSH",
     "importConfig": "Importar config.json",
     "creating": "Creando…",
-    "create": "Crear proyecto"
+    "create": "Crear proyecto",
+    "errContainerStarting": "Tu instancia en la nube está iniciando — inténtalo de nuevo en unos segundos.",
+    "errCloudRequired": "Disponible en los planes Cloud — activa Maestrus Cloud o conecta una máquina.",
+    "errClone": "No se pudo clonar el repositorio. Revisa la URL (los repos privados requieren acceso).",
+    "privateRepo": "¿Repositorio privado? Añadir token de acceso",
+    "gitToken": "Token de acceso de GitHub",
+    "gitTokenHint": "Se usa para clonar y se guarda en tu instancia — las conversaciones de Maestrus también obtienen acceso git a tus repos privados. Créalo en github.com → Settings → Developer settings → Personal access tokens.",
+    "errRepoAuth": "Este repositorio es privado (o no se encontró). Pega un token de acceso de GitHub abajo e inténtalo de nuevo."
   },
   "model": {
     "title": "Modelo",
@@ -782,5 +789,13 @@
     "linkedTo": "Servidor",
     "forget": "Olvidar servidor",
     "notServer": "Esa dirección no es un servidor Maestrus."
+  },
+  "conv": {
+    "fork": "Fork de la conversación",
+    "rename": "Renombrar conversación",
+    "renameProject": "Renombrar proyecto",
+    "delete": "Eliminar conversación",
+    "deleteConfirm": "¿Eliminar esta conversación? Su historial se eliminará (el proyecto y las demás conversaciones se mantienen).",
+    "defaultTitle": "Conversación {n}"
   }
 }

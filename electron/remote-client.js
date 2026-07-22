@@ -48,6 +48,8 @@ function tag(p, host) {
     model: p.model || 'default', thinkingMode: p.thinkingMode || 'medium', permissionMode: p.permissionMode || 'default', engine: p.engine || 'claude',
     repoUrl: null, localPath: null, mountPath: null, sessionId: p.sessionId || null,
     codeDir: null, driveDir: null, sessionDir: null, createdAt: 0, updatedAt: 0,
+    // Conversas (forks) do projeto no host — sem isso o client não vê os forks.
+    conversations: Array.isArray(p.conversations) ? p.conversations : [],
   };
 }
 
@@ -88,11 +90,16 @@ function ensureLink({ url, token, deviceId, refreshTokenFn }) {
         if (p.type === 'project.updated' && p.project) {
           const host = (hid && hosts.get(hid)) || { deviceId: hid, name: 'Host', os: '' };
           const tagged = tag(p.project, host);
-          cachedProjects = cachedProjects.map((cp) =>
-            cp.id === tagged.id
-              ? { ...cp, model: tagged.model, thinkingMode: tagged.thinkingMode, permissionMode: tagged.permissionMode, engine: tagged.engine }
-              : cp
-          );
+          let found = false;
+          cachedProjects = cachedProjects.map((cp) => {
+            if (cp.id !== tagged.id) return cp;
+            found = true;
+            // Mescla também nome e CONVERSAS (forks): criar/renomear/excluir um
+            // fork em qualquer device aparece aqui na hora, sem re-fetch.
+            return { ...cp, name: tagged.name, model: tagged.model, thinkingMode: tagged.thinkingMode, permissionMode: tagged.permissionMode, engine: tagged.engine, conversations: tagged.conversations };
+          });
+          if (!found) cachedProjects = [...cachedProjects, tagged]; // projeto novo criado no host
+          try { onProjectsChanged && onProjectsChanged(); } catch {}
         }
         if (p.projectId && p.projectId !== '*' && hid) p.projectId = `remote:${hid}:${p.projectId}`;
         if (onRemoteEvent) onRemoteEvent(p);

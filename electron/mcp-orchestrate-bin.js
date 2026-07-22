@@ -98,17 +98,18 @@ const BROWSER_TOOLS = [
 const ORCH_TOOLS = [
   {
     name: 'claui_list_projects',
-    description: 'Lista todos os projetos do Maestrus (com id, nome, modelo, codeDir) — exceto o próprio Maestrus.',
+    description: 'Lista todos os projetos do Maestrus (com id, nome, modelo, codeDir e as sub-conversas/forks de cada um, com id e título) — exceto o próprio Maestrus. Os títulos das conversas dizem do que cada fork trata: use-os pra decidir pra qual conversa direcionar um prompt.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
     name: 'claui_dispatch',
-    description: 'Delega um prompt a um projeto (que tem contexto profundo do próprio código). Por padrão é ASSÍNCRONO (fire-and-forget): dispara e volta NA HORA — o projeto roda em segundo plano e a resposta dele aparece no chat DELE (não aqui). Use isso pra delegar e SEGUIR conversando/disparando sem travar. Use wait:true só quando você PRECISA da resposta agora pra encadear (ex: pegar a saída de A pra montar o prompt de B). Funciona pra projetos locais, cloud e remotos (cloud liga sozinho). Não dispare pra "maestrus".',
+    description: 'Delega um prompt a um projeto (que tem contexto profundo do próprio código). Por padrão é ASSÍNCRONO (fire-and-forget): dispara e volta NA HORA — o projeto roda em segundo plano e a resposta dele aparece no chat DELE (não aqui). Use isso pra delegar e SEGUIR conversando/disparando sem travar. Use wait:true só quando você PRECISA da resposta agora pra encadear (ex: pegar a saída de A pra montar o prompt de B). Funciona pra projetos locais, cloud e remotos (cloud liga sozinho). Não dispare pra "maestrus". Com "conversation" você direciona o prompt pra uma SUB-CONVERSA (fork) específica do projeto — escolha pelo título (claui_list_projects mostra as conversas de cada projeto).',
     inputSchema: {
       type: 'object',
       properties: {
         project_id: { type: 'string', description: 'ID do projeto-alvo (use claui_list_projects). Aceita também o nome exato.' },
         prompt: { type: 'string', description: 'O prompt a enviar. Formule auto-contido: "dado o módulo X, qual o estado de Y?"' },
+        conversation: { type: 'string', description: 'Opcional: id ou TÍTULO da sub-conversa (fork) do projeto que deve receber o prompt. Sem isso, vai pra conversa principal.' },
         wait: { type: 'boolean', description: 'false (default) = assíncrono, volta na hora. true = espera a resposta completa (pra encadear).' },
         timeout_ms: { type: 'integer', description: 'Só com wait:true. Timeout em ms (default 300000 = 5min).' },
       },
@@ -333,6 +334,7 @@ async function callTool(name, args) {
     const res = await httpRequest('POST', '/dispatch', {
       project_id: args.project_id,
       prompt: args.prompt,
+      conversation: args.conversation || undefined,
       wait: args.wait === true,
       timeout_ms: args.timeout_ms,
     });

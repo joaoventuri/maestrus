@@ -37,8 +37,82 @@ function list() {
   return Object.values(projects).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 
+// ─── Conversas (forks) por projeto ──────────────────────────────────────────
+// Um projeto pode ter N conversas além da principal. Cada conversa é um
+// "projeto virtual" com id composto `<projectId>#<convId>`: todo o pipeline
+// existente (spawn, eventos, busy, history, relay) funciona sem saber de
+// conversas — get/save/patch aqui traduzem o id composto de/para o registro
+// `conversations[]` do projeto pai. A conversa principal continua sendo o
+// project.sessionId de sempre (nada muda para projetos sem forks).
+const CONV_SEP = '#';
+
+function splitConvId(id) {
+  const i = String(id || '').indexOf(CONV_SEP);
+  if (i < 0) return null;
+  return { pid: String(id).slice(0, i), convId: String(id).slice(i + 1) };
+}
+
+function _virtualConv(parent, conv) {
+  return {
+    ...parent,
+    id: parent.id + CONV_SEP + conv.id,
+    name: conv.title || parent.name,
+    // fork ainda não materializado: resume a sessão de origem (+ --fork-session)
+    sessionId: conv.sessionId || conv.forkFrom || null,
+    conversations: undefined,
+    __convOf: parent.id,
+    __convId: conv.id,
+    __forkPending: !!(conv.forkFrom && !conv.sessionId),
+    // sem sessão própria: não adotar o .jsonl mais recente do codeDir (seria o da principal)
+    __noAdopt: !conv.sessionId,
+  };
+}
+
 function get(id) {
-  return store.get(`projects.${id}`) || null;
+  const sp = splitConvId(id);
+  if (!sp) return store.get(`projects.${id}`) || null;
+  const parent = store.get(`projects.${sp.pid}`) || null;
+  if (!parent) return null;
+  const conv = (parent.conversations || []).find((c) => c.id === sp.convId);
+  if (!conv) return null;
+  return _virtualConv(parent, conv);
+}
+
+function listConversations(pid) {
+  const p = store.get(`projects.${pid}`) || null;
+  return (p && p.conversations) || [];
+}
+
+function createConversation(pid, { title, forkFrom } = {}) {
+  const p = store.get(`projects.${pid}`);
+  if (!p) return null;
+  const now = Date.now();
+  const conv = { id: genId(), title: title || 'Conversa', sessionId: null, forkFrom: forkFrom || null, createdAt: now, updatedAt: now };
+  p.conversations = [...(p.conversations || []), conv];
+  p.updatedAt = now;
+  store.set(`projects.${pid}`, p);
+  return conv;
+}
+
+function patchConversation(pid, convId, cpatch) {
+  const p = store.get(`projects.${pid}`);
+  if (!p) return null;
+  const idx = (p.conversations || []).findIndex((c) => c.id === convId);
+  if (idx < 0) return null;
+  p.conversations[idx] = { ...p.conversations[idx], ...cpatch, updatedAt: Date.now() };
+  p.updatedAt = Date.now();
+  store.set(`projects.${pid}`, p);
+  return p.conversations[idx];
+}
+
+function deleteConversation(pid, convId) {
+  const p = store.get(`projects.${pid}`);
+  if (!p) return null;
+  const conv = (p.conversations || []).find((c) => c.id === convId) || null;
+  p.conversations = (p.conversations || []).filter((c) => c.id !== convId);
+  p.updatedAt = Date.now();
+  store.set(`projects.${pid}`, p);
+  return conv;
 }
 
 function createDraft(input) {
@@ -64,7 +138,26 @@ function createDraft(input) {
 }
 
 function patch(id, patch) {
-  const cur = get(id);
+  const sp = splitConvId(id);
+  if (sp) {
+    // Conversa virtual: title/sessionId vão pro registro da conversa; o resto
+    // (model, thinkingMode, …) aplica no projeto pai (compartilhado).
+    const convPatch = {};
+    const parentPatch = {};
+    for (const [k, v] of Object.entries(patch || {})) {
+      if (k === 'name' || k === 'title') convPatch.title = v;
+      else if (k === 'sessionId') convPatch.sessionId = v;
+      else parentPatch[k] = v;
+    }
+    if (Object.keys(convPatch).length) patchConversation(sp.pid, sp.convId, convPatch);
+    if (Object.keys(parentPatch).length) patchInternal(sp.pid, parentPatch);
+    return get(id);
+  }
+  return patchInternal(id, patch);
+}
+
+function patchInternal(id, patch) {
+  const cur = store.get(`projects.${id}`) || null;
   if (!cur) return null;
   const next = { ...cur, ...patch, updatedAt: Date.now() };
   store.set(`projects.${id}`, next);
@@ -72,6 +165,21 @@ function patch(id, patch) {
 }
 
 function save(project) {
+  if (project && project.__convOf) {
+    // Projeto virtual (conversa): persiste só o que é da conversa. O guarda
+    // contra sessionId === forkFrom evita que um fork "herde" a sessão de
+    // origem como própria caso o --fork-session não tenha gerado id novo.
+    const conv = (listConversations(project.__convOf) || []).find((c) => c.id === project.__convId);
+    if (conv) {
+      const sid = project.sessionId || null;
+      if (conv.sessionId || sid !== (conv.forkFrom || null)) {
+        patchConversation(project.__convOf, project.__convId, { sessionId: sid });
+        project.__forkPending = false;
+        project.__noAdopt = !sid;
+      }
+    }
+    return project;
+  }
   project.updatedAt = Date.now();
   store.set(`projects.${project.id}`, project);
   return project;
@@ -208,4 +316,4 @@ function ensureStarter(workspaceDir) {
   return s;
 }
 
-module.exports = { list, get, createDraft, save, patch, remove, getSetting, setSetting, ensureMaestrus, MAESTRUS_ID, ensureStarter, STARTER_ID, isTombstoned, tombstonedIds, tombstones, addTombstones };
+module.exports = { list, get, createDraft, save, patch, remove, getSetting, setSetting, ensureMaestrus, MAESTRUS_ID, ensureStarter, STARTER_ID, isTombstoned, tombstonedIds, tombstones, addTombstones, CONV_SEP, splitConvId, listConversations, createConversation, patchConversation, deleteConversation };

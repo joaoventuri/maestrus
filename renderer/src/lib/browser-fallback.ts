@@ -156,6 +156,11 @@ export function installBrowserFallback() {
         return `maestrus-${p.name}.json`;
       },
     },
+    conversations: {
+      create: async () => { throw new Error('demo: conversas indisponíveis sem Electron'); },
+      rename: async () => null,
+      delete: async () => false,
+    },
     claude: {
       send: async (projectId, message) => {
         simulateAssistant(projectId, message);

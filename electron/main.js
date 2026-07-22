@@ -1137,6 +1137,67 @@ ipcMain.handle('projects:delete', async (_e, id) => {
   return ok;
 });
 
+// ─── Conversas (forks) por projeto ─────────────────────────────────────────
+// create: nova conversa no projeto; forkFromConvId (ou 'main') herda o contexto
+// da conversa de origem via --fork-session no primeiro turno.
+ipcMain.handle('conversations:create', async (_e, { projectId, title, forkFromConvId } = {}) => {
+  if (remoteClient.isRemote(projectId)) {
+    const r = /^remote:([^:]+):(.+)$/.exec(projectId);
+    if (!r) throw new Error('projeto remoto inválido');
+    const conv = await remoteClient.rpc(r[1], 'conversations.create', { projectId: r[2], title, forkFromConvId }, 15000);
+    // re-sincroniza a lista do host ANTES do renderer recarregar (determinístico;
+    // o broadcast project.updated cobre os OUTROS devices).
+    await remoteClient.refreshProjects().catch(() => {});
+    return conv;
+  }
+  const p = projectStore.get(projectId);
+  if (!p) throw new Error('Projeto não encontrado');
+  let forkFrom = null;
+  if (forkFromConvId === 'main') forkFrom = p.sessionId || null;
+  else if (forkFromConvId) {
+    const src = (projectStore.listConversations(projectId) || []).find((c) => c.id === forkFromConvId);
+    forkFrom = (src && (src.sessionId || src.forkFrom)) || null;
+  }
+  const conv = projectStore.createConversation(projectId, { title, forkFrom });
+  const next = projectStore.get(projectId);
+  if (next) remoteHost.broadcastProjectPatch(next);
+  return conv;
+});
+
+ipcMain.handle('conversations:rename', async (_e, { projectId, convId, title } = {}) => {
+  if (remoteClient.isRemote(projectId)) {
+    const r = /^remote:([^:]+):(.+)$/.exec(projectId);
+    if (!r) throw new Error('projeto remoto inválido');
+    const conv = await remoteClient.rpc(r[1], 'conversations.rename', { projectId: r[2], convId, title }, 15000);
+    await remoteClient.refreshProjects().catch(() => {});
+    return conv;
+  }
+  const conv = projectStore.patchConversation(projectId, convId, { title });
+  const next = projectStore.get(projectId);
+  if (next) remoteHost.broadcastProjectPatch(next);
+  return conv;
+});
+
+ipcMain.handle('conversations:delete', async (_e, { projectId, convId } = {}) => {
+  if (remoteClient.isRemote(projectId)) {
+    const r = /^remote:([^:]+):(.+)$/.exec(projectId);
+    if (!r) throw new Error('projeto remoto inválido');
+    const ok = await remoteClient.rpc(r[1], 'conversations.delete', { projectId: r[2], convId }, 15000);
+    await remoteClient.refreshProjects().catch(() => {});
+    return ok;
+  }
+  claudePty.kill(projectId + projectStore.CONV_SEP + convId);
+  const conv = projectStore.deleteConversation(projectId, convId);
+  // apaga o .jsonl da conversa (se materializada) — a principal fica intacta
+  try {
+    const p = projectStore.get(projectId);
+    if (p && conv && conv.sessionId) claudePty.deleteSessionFile(p, conv.sessionId);
+  } catch {}
+  const next = projectStore.get(projectId);
+  if (next) remoteHost.broadcastProjectPatch(next);
+  return !!conv;
+});
+
 ipcMain.handle('claude:dispatch', async (_e, { targetId, prompt, timeoutMs }) => {
   // Projeto remoto/cloud: o orquestrador delega via relay (atacha sob demanda).
   if (remoteClient.isRemote(targetId)) {
@@ -1354,9 +1415,23 @@ async function listAllProjectsForOrch() {
 }
 async function getProjectForOrch(idOrName) {
   const all = await listAllProjectsForOrch();
-  return all.find((p) => p.id === idOrName)
-    || all.find((p) => String(p.name || '').toLowerCase() === String(idOrName).toLowerCase())
-    || null;
+  const hit = all.find((p) => p.id === idOrName)
+    || all.find((p) => String(p.name || '').toLowerCase() === String(idOrName).toLowerCase());
+  if (hit) return hit;
+  // Id composto projeto#conversa (fork): resolve o projeto-base e devolve o
+  // alvo virtual da conversa. Local usa o projectStore (sessão da conversa);
+  // remoto só re-etiqueta o id — o host resolve o composto do lado de lá.
+  const sp = projectStore.splitConvId ? projectStore.splitConvId(idOrName) : null;
+  if (sp) {
+    const base = all.find((p) => p.id === sp.pid);
+    if (base) {
+      const local = projectStore.get(idOrName);
+      return local || { ...base, id: idOrName };
+    }
+    const virt = projectStore.get(idOrName);
+    if (virt) return virt;
+  }
+  return null;
 }
 // Dispatch do maestro. Default = ASSÍNCRONO (fire-and-forget): dispara via o
 // MESMO caminho de uma mensagem normal do projeto (resposta cai no chat dele) e

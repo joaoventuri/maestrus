@@ -45,6 +45,10 @@ function findSessionFile(project) {
     }
   }
 
+  // Conversa (fork) sem sessão própria ainda: NÃO adota o .jsonl mais recente
+  // do codeDir — seria a sessão da conversa principal do projeto.
+  if (project.__noAdopt) return null;
+
   let newest = null;
   for (const dir of dirs) {
     let entries;
@@ -453,6 +457,9 @@ async function send(project, message) {
     if (mcpConfig && fs.existsSync(mcpConfig)) args.push('--mcp-config', mcpConfig);
   } catch {}
   if (project.sessionId) args.push('--resume', project.sessionId);
+  // Fork ainda não materializado: resume a sessão de origem mas grava numa
+  // sessão NOVA — o session_id novo do init vira o sessionId da conversa.
+  if (project.__forkPending && project.sessionId) args.push('--fork-session');
 
   ensureTrusted(project.codeDir);
 
@@ -840,7 +847,9 @@ function dispatchOneShot(project, message, { timeoutMs = 300_000, forkSession = 
     if (project.sessionId) args.push('--resume', project.sessionId);
     // forkSession: lê o contexto atual mas grava numa sessão NOVA, deixando a
     // original intacta (usado pelo /compact pra gerar o resumo sem poluir).
-    if (forkSession && project.sessionId) args.push('--fork-session');
+    // __forkPending: conversa fork ainda não materializada — idem, mas o id
+    // novo VIRA a sessão da conversa (salvo abaixo via projectStore.save).
+    if ((forkSession || project.__forkPending) && project.sessionId) args.push('--fork-session');
 
     const bin = findClaudeBin();
     const useShell = bin.endsWith('.cmd');

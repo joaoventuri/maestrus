@@ -97,6 +97,9 @@ export interface Project {
   // máquinas veem e bloqueiam o envio (banner "Rodando em X"). TTL 5 min — se
   // expirar é porque o host crashou; libera automaticamente.
   lock?: { hostId: string; hostName: string; at: number } | null;
+  // Conversas (forks) do projeto — o chat de uma conversa usa o id composto
+  // `<projectId>#<convId>` em claude.send/stop/loadHistory e nos eventos.
+  conversations?: { id: string; title: string; createdAt?: number }[];
   createdAt: number;
   updatedAt: number;
 }
@@ -371,6 +374,11 @@ declare global {
         delete: (id: string) => Promise<boolean>;
         exportConfig: (id: string) => Promise<string | null>;
         onChanged: (handler: () => void) => () => void;
+      };
+      conversations?: {
+        create: (projectId: string, title?: string, forkFromConvId?: string) => Promise<{ id: string; title: string } | null>;
+        rename: (projectId: string, convId: string, title: string) => Promise<{ id: string; title: string } | null>;
+        delete: (projectId: string, convId: string) => Promise<boolean>;
       };
       skills?: {
         list: () => Promise<{ skills: SkillSummary[] }>;

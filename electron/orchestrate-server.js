@@ -91,6 +91,9 @@ function start({ projectStore, dispatchFn, browser, getProjects, getProject } = 
             cloud: !!p.cloud || p.source === 'cloud',
             codeDir: p.codeDir || null,
             sessionId: p.sessionId || null,
+            // Sub-conversas (forks) do projeto: alvos de dispatch tão válidos
+            // quanto o projeto — use project_id + conversation (id ou título).
+            conversations: (p.conversations || []).map((c) => ({ id: c.id, title: c.title })),
           }));
         return jsonResponse(res, 200, { projects });
       }
@@ -107,12 +110,32 @@ function start({ projectStore, dispatchFn, browser, getProjects, getProject } = 
         if (!targetId || !prompt) {
           return jsonResponse(res, 400, { error: 'missing project_id or prompt' });
         }
-        const target = await _getProject(targetId);
+        let target = await _getProject(targetId);
         if (!target) {
           return jsonResponse(res, 404, { error: `project not found: ${targetId}` });
         }
         if (target.id === _maestrusId) {
           return jsonResponse(res, 400, { error: 'cannot dispatch to maestrus from maestrus' });
+        }
+        // conversation: direciona o prompt pra uma SUB-CONVERSA (fork) do
+        // projeto, por id ou título (case-insensitive). A conversa principal
+        // do projeto vira um mini-maestro dos próprios forks.
+        if (body.conversation) {
+          const want = String(body.conversation).toLowerCase();
+          // Projetos remotos trazem conversations no stub (safeProjects);
+          // locais vêm do próprio store.
+          const convs = (Array.isArray(target.conversations) && target.conversations.length ? target.conversations
+            : (typeof _store.listConversations === 'function' ? _store.listConversations(target.id) : [])) || [];
+          const conv = convs.find((c) => c.id === body.conversation)
+            || convs.find((c) => String(c.title || '').toLowerCase() === want)
+            || convs.find((c) => String(c.title || '').toLowerCase().includes(want));
+          if (!conv) {
+            return jsonResponse(res, 404, { error: `conversation not found in ${target.name}: ${body.conversation}`, conversations: convs.map((c) => ({ id: c.id, title: c.title })) });
+          }
+          const sep = _store.CONV_SEP || '#';
+          const vTarget = await _getProject(target.id + sep + conv.id);
+          if (!vTarget) return jsonResponse(res, 404, { error: 'conversation target unavailable' });
+          target = vTarget;
         }
         try {
           const result = await _dispatchFn(target, prompt, { timeoutMs, wait });

@@ -307,6 +307,35 @@ export default function App() {
     setProjects(list);
   }
 
+  // Ações de conversas (forks) vindas da sidebar (botão direito / accordion).
+  async function handleConvAction(action: 'fork' | 'forkConv' | 'renameProject' | 'renameConv' | 'deleteConv', projectId: string, convId?: string, value?: string) {
+    const conv = (window.maestrus as any).conversations;
+    try {
+      if (action === 'fork' || action === 'forkConv') {
+        const p = safeProjects.find((pp) => pp.id === projectId);
+        const src = action === 'forkConv'
+          ? ((p as any)?.conversations || []).find((c: any) => c.id === convId)
+          : null;
+        const title = src ? `${src.title} (fork)` : t('conv.defaultTitle', { n: (((p as any)?.conversations || []).length + 1) });
+        const created = await conv?.create?.(projectId, title, action === 'forkConv' ? convId : 'main');
+        await reloadProjects();
+        if (created && created.id) { setActiveId(`${projectId}#${created.id}`); setView('chat'); }
+      } else if (action === 'renameProject' && value) {
+        const updated = await window.maestrus.projects.patch(projectId, { name: value } as any);
+        if (updated) handleProjectUpdate(updated as any);
+        await reloadProjects();
+      } else if (action === 'renameConv' && convId && value) {
+        await conv?.rename?.(projectId, convId, value);
+        await reloadProjects();
+      } else if (action === 'deleteConv' && convId) {
+        if (!confirm(t('conv.deleteConfirm'))) return;
+        await conv?.delete?.(projectId, convId);
+        await reloadProjects();
+        if (activeId === `${projectId}#${convId}`) setActiveId(projectId);
+      }
+    } catch (e) { console.error('[conv]', action, e); }
+  }
+
   function handleProjectUpdate(updated: Project) {
     if (!updated || !updated.id) return; // patch pode voltar vazio (stub cloud / rpc falhou)
     setProjects((list) => (list || []).filter(Boolean).map((p) => (p.id === updated.id ? updated : p)));
@@ -326,7 +355,19 @@ export default function App() {
   }
 
   const safeProjects = (projects || []).filter(Boolean);
-  const activeProject = safeProjects.find((p) => p && p.id === activeId) || null;
+  // Id composto `projeto#conversa` (fork): monta um projeto VIRTUAL herdando o
+  // pai — o ProjectChat funciona sem saber de conversas (send/history/eventos
+  // já falam o id composto de ponta a ponta).
+  const activeProject = (() => {
+    const direct = safeProjects.find((p) => p && p.id === activeId) || null;
+    if (direct || !activeId || !activeId.includes('#')) return direct;
+    const hi = activeId.indexOf('#');
+    const base = safeProjects.find((p) => p && p.id === activeId.slice(0, hi));
+    if (!base) return null;
+    const conv = ((base as any).conversations || []).find((c: any) => c.id === activeId.slice(hi + 1));
+    if (!conv) return null;
+    return { ...base, id: activeId, name: `${base.name} · ${conv.title}` } as Project;
+  })();
   const isDemo = !isWeb && !(window as any).__maestrus_electron;
   // Mostra todos os projetos (locais + remotos de qualquer máquina descoberta).
   // O modo não mais filtra — todas as sessões acessíveis aparecem mescladas.
@@ -376,6 +417,7 @@ export default function App() {
         onStarter={() => setView('starter')}
         onShare={() => setShowShare(true)}
         onDelete={deleteProject}
+        onConvAction={handleConvAction}
       />
 
       <main className="main">
