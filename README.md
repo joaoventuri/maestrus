@@ -69,6 +69,29 @@ account** (official OAuth — approve in browser, paste the code). Start conduct
 
 ---
 
+
+## 📥 Desktop & mobile apps
+
+The same native app powers Maestrus Cloud and your self-hosted server — always
+grab the latest build (auto-updates after install):
+
+<div align="center">
+
+[![Download for Windows](https://img.shields.io/badge/Windows-Download_.exe-ff8a3d?style=for-the-badge&logo=data:image/svg+xml;base64,&logoColor=white&labelColor=16161b)](https://maestrus.cloud/download/win)
+[![Download for macOS](https://img.shields.io/badge/macOS-Download_.dmg-ff8a3d?style=for-the-badge&labelColor=16161b)](https://maestrus.cloud/download/mac)
+[![Download for Linux](https://img.shields.io/badge/Linux-Download_.AppImage-ff8a3d?style=for-the-badge&labelColor=16161b)](https://maestrus.cloud/download/linux)
+
+<sub>Evergreen links — they always redirect to the newest release. On your phone, open
+`http://YOUR_SERVER:8090/app` and "Add to Home Screen" (installable PWA).</sub>
+
+</div>
+
+After installing, open **Remote Access → Connect to my server**, paste your
+server URL + `SELFHOST_SECRET`, and the app reconnects automatically on every
+launch. No accounts needed.
+
+---
+
 ## 🚀 What you get
 
 | | |
@@ -169,9 +192,10 @@ docker run --rm -v maestrus-data:/data -v "$PWD":/backup alpine \
 ## 🖥️ Connect from anywhere
 
 - **Browser / PWA:** open your server URL, enter the secret. Done.
-- **Desktop apps:** grab the installer from [Releases](../../releases), open
-  **Remote Access → Connect to my server**, paste URL + secret. It reconnects
-  automatically on every launch.
+- **Desktop apps:** download for [Windows](https://maestrus.cloud/download/win),
+  [macOS](https://maestrus.cloud/download/mac) or [Linux](https://maestrus.cloud/download/linux)
+  (always the latest build), open **Remote Access → Connect to my server**,
+  paste URL + secret. It reconnects automatically on every launch.
 
 ## 📂 Source code & building from source
 
@@ -214,6 +238,9 @@ four years after publication. See [LICENSE](LICENSE).
 <div align="center">
 
 **Maestrus** · <sub>your projects, conducted.</sub>
+
+<sub>Don't want to run a server? [**Maestrus Cloud**](https://maestrus.cloud) gives you a
+managed instance with your own URL in 40 seconds — 30 days free, no card.</sub>
 
 <sub>Found it useful? A ⭐ helps other builders find it.</sub>
 
