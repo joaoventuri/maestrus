@@ -124,10 +124,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Contexto e Dockerfile sao declarados separados de proposito: o
+          # server COPIA electron/ e relay/, entao precisa da raiz do repo como
+          # contexto. Passar ./maestrus-server quebrava com "/electron: not found".
           - image: maestrus-relay
             context: ./relay
+            dockerfile: ./relay/Dockerfile
           - image: maestrus-server
-            context: ./maestrus-server
+            context: .
+            dockerfile: ./maestrus-server/Dockerfile
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -141,6 +146,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: ${{ !inputs.dry_run }}
           tags: |
