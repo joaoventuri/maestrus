@@ -135,6 +135,21 @@ jobs:
             dockerfile: ./maestrus-server/Dockerfile
     steps:
       - uses: actions/checkout@v4
+
+      # O Dockerfile do server copia dist-web/ e dist-mobile/, que sao
+      # artefatos de build e nao existem no repo (gitignored). Sem gerar antes,
+      # o buildx morre com "/dist-web: not found". O relay nao precisa disto,
+      # entao roda so onde faz falta.
+      - uses: actions/setup-node@v4
+        if: matrix.image == 'maestrus-server'
+        with: { node-version: '22', cache: 'npm' }
+      - name: Gerar assets do web e do PWA
+        if: matrix.image == 'maestrus-server'
+        run: |
+          npm ci
+          npm run build:web
+          npm run build:mobile
+
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
