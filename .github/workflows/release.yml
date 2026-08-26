@@ -1,32 +1,171 @@
-# Publica os instaladores no GitHub Releases quando a versao muda no
-# package.json. Sem isto o projeto continuaria dependendo do servidor de uma
-# pessoa so para distribuir binario, que e o oposto de "rode na sua infra".
+# Release completo: instaladores das 3 plataformas + imagens de container.
+#
+# Dispara quando a versão muda no package.json (ou na mão, pelo botão Run).
+# Actions é gratuito e ilimitado em repositório público, então não há motivo
+# para economizar job aqui.
 name: Release
+
 on:
   push:
     branches: [main]
     paths: ['package.json']
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Só buildar, sem publicar'
+        type: boolean
+        default: false
+
 permissions:
-  contents: write
+  contents: write      # criar a release e subir os binários
+  packages: write      # publicar no GHCR
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false     # nunca abortar um release pela metade
+
 jobs:
-  build:
+  # A versão vira saída única para todos os jobs. Sem isto, cada job leria o
+  # package.json por conta e um push no meio do caminho produziria release com
+  # binários de versões diferentes.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: v${{ steps.v.outputs.version }}
+      exists: ${{ steps.check.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+      - id: check
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          if gh release view "v${{ steps.v.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "::notice::Release v${{ steps.v.outputs.version }} já existe; os binários serão substituídos."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - run: npm test          # inclui o check de i18n e o no-paywall
+      - run: npx tsc --noEmit -p renderer/tsconfig.json || true
+
+  desktop:
+    needs: [version, test]
+    strategy:
+      fail-fast: false         # macOS falhar não pode impedir Windows de sair
+      matrix:
+        include:
+          - os: windows-latest
+            script: build:win
+            artifacts: 'dist-app/*.exe dist-app/latest.yml dist-app/*.blockmap'
+          - os: macos-latest
+            script: build:mac
+            artifacts: 'dist-app/*.dmg dist-app/latest-mac.yml dist-app/*.blockmap'
+          - os: ubuntu-latest
+            script: build:linux
+            artifacts: 'dist-app/*.AppImage dist-app/latest-linux.yml'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+
+      - name: Build
+        run: npm run ${{ matrix.script }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Sem certificado de assinatura configurado, o electron-builder tenta
+          # assinar e falha. Desligado explicitamente para o build ser
+          # reproduzível por qualquer pessoa que forkar o projeto.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # O latest*.yml é o que o electron-updater lê para saber que há versão
+      # nova. Subir o instalador sem ele = ninguém recebe update, em silêncio.
+      - name: Publicar na Release
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          shopt -s nullglob
+          files=(${{ matrix.artifacts }})
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::Build não gerou artefato em dist-app/"; exit 1
+          fi
+          gh release create "${{ needs.version.outputs.tag }}" \
+            --title "${{ needs.version.outputs.tag }}" \
+            --notes "Instaladores para Windows, macOS e Linux. O app se atualiza sozinho a partir daqui." \
+            2>/dev/null || true
+          gh release upload "${{ needs.version.outputs.tag }}" "${files[@]}" --clobber
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-${{ matrix.os }}
+          path: dist-app/
+          retention-days: 7
+
+  # Imagens para quem roda o Maestrus num servidor. Multi-arch porque VPS ARM
+  # (Ampere, Graviton, Oracle free tier) é comum e barato.
+  containers:
+    needs: [version, test]
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            script: build:linux
-          - os: macos-latest
-            script: build:mac
-          - os: windows-latest
-            script: build:win
-    runs-on: ${{ matrix.os }}
+          - image: maestrus-relay
+            context: ./relay
+          - image: maestrus-server
+            context: ./maestrus-server
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '22' }
-      - run: npm ci
-      - run: npm run ${{ matrix.script }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: ${{ !inputs.dry_run }}
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ !inputs.dry_run }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ needs.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Um resumo que diz o que REALMENTE saiu. Com fail-fast desligado, um job
+  # pode falhar sozinho e passar despercebido no meio do verde.
+  summary:
+    needs: [version, desktop, containers]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          {
+            echo "## ${{ needs.version.outputs.tag }}"
+            echo ""
+            echo "| Alvo | Status |"
+            echo "|---|---|"
+            echo "| Instaladores (win/mac/linux) | ${{ needs.desktop.result }} |"
+            echo "| Imagens GHCR (amd64/arm64) | ${{ needs.containers.result }} |"
+            echo ""
+            if [ "${{ needs.desktop.result }}" != "success" ] || [ "${{ needs.containers.result }}" != "success" ]; then
+              echo "> Alguma plataforma falhou. A release pode estar incompleta."
+            fi
+          } >> $GITHUB_STEP_SUMMARY
