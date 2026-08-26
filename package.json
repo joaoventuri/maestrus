@@ -24,7 +24,9 @@
     "test:web": "vitest run",
     "typecheck": "tsc --noEmit -p renderer/tsconfig.json",
     "publish:web": "bash scripts/publish-frontend.sh",
-    "deadcode": "knip"
+    "deadcode": "knip",
+    "readme:sync": "node scripts/sync-readme-version.mjs",
+    "version": "node scripts/sync-readme-version.mjs && git add README.md"
   },
   "author": "JoÃ£o Venturi",
   "license": "Apache-2.0",
