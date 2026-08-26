@@ -1,0 +1,38 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "electron/main.js",
+    "electron/preload.js",
+    "electron/mcp-orchestrate-bin.js",
+    "maestrus-server/index.js",
+    "maestrus-server/agent/index.js",
+    "relay/server.js",
+    "relay/bin/relay.js",
+    "renderer/src/main.tsx",
+    "renderer/src/web-main.tsx",
+    "renderer/src/mobile-main.tsx",
+    "renderer/public/sw.js",
+    "scripts/*.js"
+  ],
+  "project": [
+    "electron/**/*.js",
+    "relay/**/*.js",
+    "maestrus-server/**/*.js",
+    "renderer/src/**/*.{ts,tsx}",
+    "scripts/**/*.js"
+  ],
+  "ignore": [
+    "dist-*/**",
+    "vendor/**",
+    "cloud-runner/**",
+    "**/*.test.ts"
+  ],
+  "ignoreDependencies": [
+    "simple-icons",
+    "three",
+    "@types/three",
+    "sharp",
+    "png-to-ico",
+    "jsqr"
+  ]
+}

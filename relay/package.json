@@ -1,0 +1,15 @@
+{
+  "name": "maestrus-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Relay WebSocket do Maestrus remoto — faz a ponte client↔host por conta, sob NAT.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node bin/relay.js",
+    "test": "node test/relay.test.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,14 @@
+node_modules/
+dist-renderer/
+dist-app/
+dist-asar/
+.vite/
+*.log
+.DS_Store
+maestrus-data/
+vendor/
+dist-mobile/
+maestrus-server/node_modules/
+maestrus-server/data/
+
+.playwright-mcp/

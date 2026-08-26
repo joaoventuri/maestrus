@@ -1,0 +1,74 @@
+name: Build & publish macOS
+
+# Builda o .dmg de macOS num runner da Apple e publica no feed do servidor
+# (downloads/ + registra a release 'mac'). Dispara quando a versão muda
+# (package.json) ou manualmente. O app no Mac detecta a versão nova e oferece
+# o download (instalação manual — build não-assinado).
+on:
+  push:
+    branches: [main]
+    paths: ['package.json']
+  workflow_dispatch:
+
+concurrency:
+  group: build-mac
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: npm install
+
+      - name: Build macOS dmg
+        run: npm run build:mac
+
+      - name: Read version
+        id: ver
+        run: echo "v=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Setup SSH
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > "$HOME/.ssh/known_hosts"
+
+      - name: Publish to feed + register release
+        env:
+          V: ${{ steps.ver.outputs.v }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          SSH="ssh -p $PORT -i $HOME/.ssh/deploy_key -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          DMG="dist-app/maestrus-mac-${V}.dmg"
+          test -f "$DMG" || { echo "dmg não encontrado: $DMG"; ls -la dist-app; exit 1; }
+          # Bind-mount /opt/maestrus/data/downloads → container /var/www/html/downloads,
+          # servido por Caddy em https://maestrus.cloud/downloads/.
+          REMOTE="/opt/maestrus/data/downloads"
+          URL="https://maestrus.cloud/downloads/maestrus-mac-${V}.dmg"
+          rsync -rlz -e "$SSH" "$DMG" dist-app/latest-mac.yml "root@${HOST}:${REMOTE}/"
+          $SSH "root@${HOST}" "chmod 644 '${REMOTE}/maestrus-mac-${V}.dmg' '${REMOTE}/latest-mac.yml' && docker compose -f /opt/maestrus/docker-compose.yml exec -T app php /var/www/html/register-release.php '${V}' mac '${URL}'"
+
+      - name: Publish ASAR patch (smart update)
+        env:
+          V: ${{ steps.ver.outputs.v }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          # Extrai o app.asar do bundle gerado e publica em
+          # downloads/asar/<platform>/{version,latest.json} — permite update
+          # in-place sem reinstalar (preserva permissões do OS).
+          node scripts/publish-asar.js
+          SSH="ssh -p $PORT -i $HOME/.ssh/deploy_key -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          REMOTE="/opt/maestrus/data/downloads/asar"
+          for plat_dir in dist-asar/*/; do
+            plat=$(basename "$plat_dir")
+            $SSH "root@${HOST}" "mkdir -p ${REMOTE}/${plat}/${V}"
+            rsync -rlz -e "$SSH" "${plat_dir}${V}/app.asar" "root@${HOST}:${REMOTE}/${plat}/${V}/app.asar"
+            rsync -rlz -e "$SSH" "${plat_dir}latest.json" "root@${HOST}:${REMOTE}/${plat}/latest.json"
+            echo "[asar] published ${plat}/${V}"
+          done

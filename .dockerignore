@@ -1,0 +1,10 @@
+# Contexto do build das imagens públicas (GHCR): NADA de infra do
+# maestrus.cloud embarca — o agent provisiona containers no VPS-host e
+# é exclusivo do control plane privado.
+maestrus-server/agent
+.git
+node_modules
+dist-app
+vendor
+.maestrus
+.playwright-mcp

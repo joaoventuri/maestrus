@@ -1,0 +1,10 @@
+{
+  "name": "maestrus-cloud-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runner headless do Maestrus on Cloud: roda o Claude num sandbox e se expõe pelo relay.",
+  "main": "runner.js",
+  "dependencies": {
+    "ws": "^8.21.0"
+  }
+}
