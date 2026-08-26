@@ -1,11 +1,14 @@
 <div align="center">
 
-<img src=".github/assets/hero.svg" width="720" alt="Maestrus — the maestro of your AI coding agents" />
+<img src=".github/assets/wordmark.png" width="560" alt="Maestrus" />
 
 <br/><br/>
 
+### The maestro of your AI coding agents
+
 **One conductor for every codebase you own.**<br/>
-Runs on your machines, with your accounts. No cloud account, no limits, nothing phones home.
+Runs on your machines, with your accounts.<br/>
+No cloud account, no limits, nothing phones home.
 
 <br/>
 
