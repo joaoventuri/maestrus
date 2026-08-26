@@ -1,0 +1,14 @@
+# Serviço orquestrador do Maestrus on Cloud (roda no servidor, rede interna).
+# Leve: só o SDK do E2B + o orquestrador. A compute pesada fica no E2B.
+FROM node:22-slim
+WORKDIR /app
+# deps do orquestrador (e2b sdk)
+COPY cloud-runner/package.orchestrator.json ./package.json
+RUN npm install --omit=dev
+# fontes: relay (link/protocol) + runner + orquestrador
+COPY relay/link.js relay/protocol.js ./relay/
+COPY cloud-runner/runner.js cloud-runner/package.json ./cloud-runner/
+COPY cloud-runner/orchestrator.js cloud-runner/daytona.js cloud-runner/local.js cloud-runner/server.js ./
+ENV PORT=8790
+EXPOSE 8790
+CMD ["node", "server.js"]

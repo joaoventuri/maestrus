@@ -1,0 +1,19 @@
+{
+  "name": "maestrus-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Headless Maestrus server for cloud containers",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "MAESTRUS_LOG=debug node --watch index.js"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "ssh2": "^1.17.0",
+    "ws": "^8.21.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

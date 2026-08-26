@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#141414" />
+    <meta name="apple-mobile-web-app-title" content="Maestrus" />
+    <link rel="icon" type="image/png" href="/web/icon-192.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" />
+    <title>Maestrus</title>
+    <script>
+      // O /web é um app ONLINE (não-offline). Se um service worker antigo
+      // ficou instalado numa visita anterior, ele servia o bundle cacheado
+      // pra sempre (usuários viam JS removido meses atrás). Mata qualquer SW
+      // + limpa os caches no /web — garante sempre a versão fresca.
+      (function () {
+        try {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function (rs) {
+              var killed = false;
+              rs.forEach(function (r) { if ((r.scope || '').indexOf('/app') === -1) { r.unregister(); killed = true; } });
+              if (killed && window.caches) caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); });
+              if (killed) location.reload();
+            }).catch(function () {});
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/web-main.tsx"></script>
+  </body>
+</html>

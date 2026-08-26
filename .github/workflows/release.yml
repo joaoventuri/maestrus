@@ -1,0 +1,32 @@
+# Publica os instaladores no GitHub Releases quando a versao muda no
+# package.json. Sem isto o projeto continuaria dependendo do servidor de uma
+# pessoa so para distribuir binario, que e o oposto de "rode na sua infra".
+name: Release
+on:
+  push:
+    branches: [main]
+    paths: ['package.json']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            script: build:linux
+          - os: macos-latest
+            script: build:mac
+          - os: windows-latest
+            script: build:win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+      - run: npm run ${{ matrix.script }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

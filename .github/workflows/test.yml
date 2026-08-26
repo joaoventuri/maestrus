@@ -1,0 +1,39 @@
+name: Tests
+
+# Validação em tempo real: roda em TODO push/PR. Usa node:test (embutido) —
+# sem npm install, então é rápido e nunca falha por rede.
+on:
+  push:
+    branches: [ main, remote-host ]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check (electron + relay)
+        run: |
+          for f in electron/*.js relay/*.js; do node --check "$f"; done
+      # Os testes de integração do relay precisam do 'ws' (dep de produção).
+      # Instala só ele — leve, sem build nativo — em vez do npm ci inteiro.
+      - name: Install test deps (ws)
+        run: npm install ws@^8.21.0 --no-save --no-audit --no-fund
+      - name: Unit tests (node:test)
+        run: node --test "electron/**/*.test.js" "relay/**/*.test.js"
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Só o vitest (a config dedicada não carrega o toolchain do vite) — rápido.
+      - name: Install vitest
+        run: npm install vitest@^2.1.9 --no-save --no-audit --no-fund
+      - name: Renderer logic tests (vitest)
+        run: npx vitest run
