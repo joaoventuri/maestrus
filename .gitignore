@@ -12,3 +12,7 @@ maestrus-server/node_modules/
 maestrus-server/data/
 
 .playwright-mcp/
+
+# Uploads e material de trabalho — nunca vao para o repo publico
+.maestrus/
+*.zip
