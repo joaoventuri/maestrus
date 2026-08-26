@@ -63,6 +63,15 @@ function setAccount(acc) {
 }
 // É Pro? (destrava multi-dispositivo / modo server + Maestrus AI incluído).
 // Admin nunca trava. Lê o entitlement que o backend manda no activate/validate.
+/**
+ * Há um provedor de nuvem gerenciada configurado? Os recursos de sandbox
+ * remoto dependem de infraestrutura de terceiro; quem self-hospeda usa o
+ * próprio host e nunca passa por aqui. Não é trava de plano.
+ */
+function isConfigured() {
+  try { return !!(getAccount && getAccount()); } catch { return false; }
+}
+
 function isPro() {
   const a = getAccount();
   if (!a) return false;
@@ -366,4 +375,4 @@ async function shareRelayToken(shareId) {
   } catch (e) { return { ok: false, error: e.message }; }
 }
 
-module.exports = { activate, validate, logout, getAccount, setAccount, isPro, getDeviceId, regenerateDeviceId, checkUpdate, panelUrl, aiStatus, relayToken, pairCreate, pairRedeem, cloudList, cloudStart, cloudStop, cloudPause, cloudResume, cloudDelete, devices, deviceDelete, devicePing, userApi, shareCreate, shareList, shareRevoke, shareAccept, shareRelayToken, containerStatus, containerProvision, containerPause, domainStatus, domainSet, domainVerify, domainRemove };
+module.exports = { isConfigured, activate, validate, logout, getAccount, setAccount, isPro, getDeviceId, regenerateDeviceId, checkUpdate, panelUrl, aiStatus, relayToken, pairCreate, pairRedeem, cloudList, cloudStart, cloudStop, cloudPause, cloudResume, cloudDelete, devices, deviceDelete, devicePing, userApi, shareCreate, shareList, shareRevoke, shareAccept, shareRelayToken, containerStatus, containerProvision, containerPause, domainStatus, domainSet, domainVerify, domainRemove };

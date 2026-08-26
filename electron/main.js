@@ -828,25 +828,16 @@ ipcMain.handle('requirements:install', async (_e, { id }) => {
 ipcMain.handle('app:config', async () => ({ base: require('./config').BASE, hostId: claudePty.currentHostId() }));
 // Modo do app: 'server' (tudo local, pode hospedar clientes) | 'client'
 // (espelha um host pelo relay). null = ainda não escolhido (mostra o picker).
-// Amostra de remoto pro Free: N conexões remotas/mês pra provar o multi-
-// dispositivo antes de assinar (funil estilo Omnara). Pro = ilimitado.
-const FREE_REMOTE_LIMIT = 10;
-function curMonthKey() { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}`; }
-function freeRemoteState() {
-  let s = null; try { s = projectStore.getSetting('remote_free'); } catch {}
-  if (!s || s.month !== curMonthKey()) s = { month: curMonthKey(), count: 0 };
-  return s;
-}
-function freeRemoteRemaining() { return Math.max(0, FREE_REMOTE_LIMIT - freeRemoteState().count); }
-function freeRemoteConsume() { const s = freeRemoteState(); s.count += 1; try { projectStore.setSetting('remote_free', s); } catch {} }
-// Pode usar remoto agora? Pro sempre; Free se ainda tem amostra no mês.
-function remoteAllowed() { return cloud.isPro() || freeRemoteRemaining() > 0; }
 
-// Entitlement: Pro? + quantas conexões remotas grátis restam no mês (Free).
+// Acesso remoto é ILIMITADO. Aqui existia uma cota mensal de conexões e um
+// gate que barrava quem não assinasse — funil de quando o Maestrus era vendido.
+// Num projeto aberto isso seria pegadinha: quem clona espera que funcione. As
+// funções foram REMOVIDAS, e não trocadas por um `return true`, para não deixar
+// a semente do paywall no código. Ver electron/no-paywall.test.js.
+
+// Entitlement: mantido só para o renderer não quebrar. Tudo liberado, sempre.
 ipcMain.handle('app:entitlement', async () => ({
-  pro: cloud.isPro(),
-  remoteFreeRemaining: cloud.isPro() ? null : freeRemoteRemaining(),
-  remoteFreeLimit: FREE_REMOTE_LIMIT,
+  pro: true, remoteFreeRemaining: null, remoteFreeLimit: null,
 }));
 // Preferências por-usuário (idioma/tema) cloud-backed (user_settings) + fallback
 // local. Logado → DB (segue o usuário em todo device); offline → projectStore.
@@ -1643,7 +1634,6 @@ _hostPingTimer.unref?.();
 // projetos automaticamente — sem código de pareamento. Idempotente.
 async function startHost() {
   if (!cloud.getAccount || !cloud.getAccount()) return { ok: false, error: 'not_logged_in' };
-  if (!remoteAllowed()) return { ok: false, error: 'free_limit' };
   const t = await cloud.relayToken('host');
   if (!t || !t.ok || !t.token) return { ok: false, error: (t && t.error) || 'no_token' };
   // O relay mantém 1 conexão por deviceId. Derruba o client base (mesmo ID)
@@ -1678,11 +1668,7 @@ async function startHost() {
   return r;
 }
 
-ipcMain.handle('remote:hostEnable', async () => {
-  if (!remoteAllowed()) return { ok: false, error: 'free_limit' };  // amostra grátis esgotou
-  if (!cloud.isPro()) freeRemoteConsume();
-  return startHost();
-});
+ipcMain.handle('remote:hostEnable', async () => startHost());
 ipcMain.handle('remote:hostDisable', async () => {
   if (_hostRefreshTimer) { clearInterval(_hostRefreshTimer); _hostRefreshTimer = null; }
   try { projectStore.setSetting('host_always_on', false); } catch {}  // desliga o "sempre" também
@@ -1729,7 +1715,7 @@ ipcMain.handle('app:setLaunchAtLogin', async (_e, on) => {
 // free com amostra restante — sem consumir amostra no auto-start).
 function maybeAutoHost(attempt = 0) {
   try {
-    if (!(hostAlwaysOn() && cloud.getAccount && cloud.getAccount() && remoteAllowed())) return;
+    if (!(hostAlwaysOn() && cloud.getAccount && cloud.getAccount())) return;
     startHost().then((r) => {
       // Falhou (sem token / rede) → tenta de novo (até 3x, backoff) pra o host
       // realmente subir sozinho no boot mesmo com rede instável.
@@ -1961,7 +1947,9 @@ ipcMain.handle('cloud:containerConnect', async () => {
   } catch (e) { return { ok: false, error: e && e.message }; }
 });
 ipcMain.handle('cloud:cloudStart', async (_e, { projectId, autoSetup }) => {
-  if (!cloud.isPro()) return { ok: false, error: 'cloud_required' };
+  // Sandbox gerenciado: exige um provedor configurado. Não é trava de plano —
+  // é uma dependência externa que quem self-hospeda substitui pelo próprio host.
+  if (!cloud.isConfigured || !cloud.isConfigured()) return { ok: false, error: 'cloud_provider_not_configured' };
   const p = projectStore.get(projectId);
   if (!p) return { ok: false, error: 'not_found' };
   const payload = { projectId: p.id, name: p.name, model: p.model || 'default', autoSetup: autoSetup !== false, sessionId: p.sessionId || null };
@@ -1986,17 +1974,15 @@ ipcMain.handle('cloud:cloudStart', async (_e, { projectId, autoSetup }) => {
 });
 // Conecta no host de uma sessão cloud (device_id) — reusa o relay client.
 ipcMain.handle('cloud:openCloud', async (_e, { deviceId, name }) => {
-  if (!cloud.isPro()) return { ok: false, error: 'cloud_required' };
+  if (!cloud.isConfigured || !cloud.isConfigured()) return { ok: false, error: 'cloud_provider_not_configured' };
   if (!deviceId) return { ok: false, error: 'no_device' };
   return startRelayClient(deviceId, name || 'Cloud');
 });
 
 ipcMain.handle('remote:connect', async (_e, code) => {
-  if (!remoteAllowed()) return { ok: false, error: 'free_limit' };  // amostra grátis esgotou
   const pr = await cloud.pairRedeem(code);
   if (!pr || !pr.ok || !pr.host_device_id) return { ok: false, error: (pr && pr.error) || 'pair_failed' };
   const r = await startRelayClient(pr.host_device_id, pr.host_name);
-  if (r && r.ok !== false && !cloud.isPro()) freeRemoteConsume();
   // Persiste o host pra auto-reconectar no boot (sem novo código de pareamento).
   if (r && r.ok !== false) {
     try {

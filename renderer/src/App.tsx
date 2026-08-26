@@ -18,7 +18,6 @@ import Logo from './components/Logo';
 import UpdateBanner from './components/UpdateBanner';
 import TitleBar from './components/TitleBar';
 import Splash from './components/Splash';
-import MarketingBanner from './components/MarketingBanner';
 import { useT } from './lib/i18n';
 import { noteEvent, setActiveProject } from './lib/activity-store';
 
@@ -413,7 +412,6 @@ export default function App() {
       )}
       {!isWeb && <TitleBar />}
       <UpdateBanner />
-      {!isWeb && <MarketingBanner onOpen={() => setView('cloud')} />}
       {isDemo && (
         <div className="demo-banner">
           <strong>{t('demo.title')}</strong> — {t('demo.body', { cmd: 'npm run dev' })}
