@@ -12,8 +12,8 @@ No cloud account, no limits, nothing phones home.
 
 <br/>
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows-ff8a3d?style=for-the-badge&logo=windows&logoColor=white)](https://maestrus.cloud/downloads/maestrus-win-0.4.56.exe)
-[![Download for macOS](https://img.shields.io/badge/Download-macOS-ff8a3d?style=for-the-badge&logo=apple&logoColor=white)](https://maestrus.cloud/downloads/maestrus-mac-0.4.56.dmg)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows-ff8a3d?style=for-the-badge&logo=windows&logoColor=white)](https://maestrus.cloud/downloads/maestrus-win-0.5.0.exe)
+[![Download for macOS](https://img.shields.io/badge/Download-macOS-ff8a3d?style=for-the-badge&logo=apple&logoColor=white)](https://maestrus.cloud/downloads/maestrus-mac-0.5.0.dmg)
 [![Build for Linux](https://img.shields.io/badge/Build-Linux-1f1f23?style=for-the-badge&logo=linux&logoColor=white)](#-build-from-source)
 
 <sub>Latest **v0.4.56** · [all releases](https://github.com/joaoventuri/maestrus/releases) · Apache-2.0 · no telemetry</sub>
@@ -216,8 +216,8 @@ to configure.
 
 | | Platform | Get it | Notes |
 |---|---|---|---|
-| <img src="https://cdn.simpleicons.org/windowsxp/ff8a3d" width="18"/> | **Windows** | [`maestrus-win-0.4.56.exe`](https://maestrus.cloud/downloads/maestrus-win-0.4.56.exe) | Installer · auto-updates |
-| <img src="https://cdn.simpleicons.org/apple/ff8a3d" width="18"/> | **macOS** (Apple Silicon) | [`maestrus-mac-0.4.56.dmg`](https://maestrus.cloud/downloads/maestrus-mac-0.4.56.dmg) | Installer · auto-updates |
+| <img src="https://cdn.simpleicons.org/windowsxp/ff8a3d" width="18"/> | **Windows** | [`maestrus-win-0.5.0.exe`](https://maestrus.cloud/downloads/maestrus-win-0.5.0.exe) | Installer · auto-updates |
+| <img src="https://cdn.simpleicons.org/apple/ff8a3d" width="18"/> | **macOS** (Apple Silicon) | [`maestrus-mac-0.5.0.dmg`](https://maestrus.cloud/downloads/maestrus-mac-0.5.0.dmg) | Installer · auto-updates |
 | <img src="https://cdn.simpleicons.org/linux/ff8a3d" width="18"/> | **Linux** | [build it](#-build-from-source) | AppImage builds in CI; no published binary yet |
 
 > **Node, Git and the Claude CLI ship inside the installer.** No setup steps, no
