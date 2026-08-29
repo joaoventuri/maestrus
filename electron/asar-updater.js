@@ -27,9 +27,14 @@ const path = require('path');
 const crypto = require('crypto');
 const https = require('https');
 const { spawn } = require('child_process');
-const { BASE } = require('./config');
+const { BASE, GH_LATEST } = require('./config');
 
-const FEED_BASE = `${BASE}/downloads/asar`;
+// O manifesto do update rápido vem do GitHub Releases: `asar-<plat>.json` é um
+// asset da release, e aponta para o `app-<plat>.asar` da mesma release. Assim a
+// atualização não depende de servidor próprio — quem forka herda o mecanismo.
+// O domínio fica como fallback para builds antigos, que ainda apontam para lá.
+const FEED_GH = GH_LATEST;
+const FEED_LEGACY = `${BASE}/downloads/asar`;
 
 let win = null;
 let pendingMeta = null;       // { version, sha256, electron, url }
@@ -59,9 +64,17 @@ function platformKey() {
   return null;
 }
 
-function httpJson(url) {
+function httpJson(url, depth = 0) {
+  if (depth > 5) return Promise.reject(new Error('too_many_redirects'));
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { 'cache-control': 'no-cache' } }, (res) => {
+    const req = https.get(url, { headers: { 'cache-control': 'no-cache', 'user-agent': 'maestrus-updater' } }, (res) => {
+      // O GitHub Releases responde 302 para objects.githubusercontent.com em
+      // TODO download de asset. Sem seguir o redirect aqui, o manifesto nunca
+      // carregaria e o update simplesmente não apareceria.
+      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+        res.resume();
+        return httpJson(res.headers.location, depth + 1).then(resolve, reject);
+      }
       if (res.statusCode === 404) return resolve(null);
       if (res.statusCode !== 200) { res.resume(); return reject(new Error('http ' + res.statusCode)); }
       let data = '';
@@ -149,7 +162,11 @@ async function checkForUpdate() {
   const plat = platformKey();
   if (!plat) return { ok: false, reason: 'unsupported_platform' };
   try {
-    const meta = await httpJson(`${FEED_BASE}/${plat}/latest.json?t=${Date.now()}`);
+    // GitHub primeiro; o legado cobre quem instalou antes desta versão.
+    let meta = await httpJson(`${FEED_GH}/asar-${plat}.json?t=${Date.now()}`).catch(() => null);
+    if (!meta || !meta.version) {
+      meta = await httpJson(`${FEED_LEGACY}/${plat}/latest.json?t=${Date.now()}`).catch(() => null);
+    }
     if (!meta || !meta.version || !meta.sha256 || !meta.url) { console.log('[asar-updater] check: no_manifest'); return { ok: false, reason: 'no_manifest' }; }
     const cur = app.getVersion();
     console.log('[asar-updater] check: current=' + cur + ' remote=' + meta.version);
