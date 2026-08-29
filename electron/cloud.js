@@ -5,7 +5,7 @@
 const crypto = require('crypto');
 const os = require('os');
 const projectStore = require('./project-store');
-const { API_BASE, BASE } = require('./config');
+const { GH_API, API_BASE, BASE } = require('./config');
 
 // Fingerprint barato da máquina — só pra detectar quando a config do Maestrus
 // foi CLONADA pra outro computador (copiar ~/Library/Application Support/maestrus,
@@ -236,15 +236,53 @@ async function panelUrl() {
   return `${BASE}/dashboard.php`;
 }
 
+/**
+ * Há versão nova? Lê o GitHub Releases, não um servidor próprio: o projeto é
+ * aberto e a distribuição precisa funcionar para qualquer fork sem infra.
+ * Se o GitHub falhar (rede, rate limit), cai no endpoint antigo para não
+ * deixar quem já usa sem aviso de atualização.
+ */
+function cmpVer(a, b) {
+  const pa = String(a || '0').split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = String(b || '0').split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) { if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0); }
+  return 0;
+}
+
 async function checkUpdate(currentVersion) {
   const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 12000);
+    const res = await fetch(GH_API, {
+      signal: ctrl.signal,
+      headers: { accept: 'application/vnd.github+json', 'user-agent': 'maestrus-updater' },
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      const rel = await res.json();
+      const latest = String(rel.tag_name || '').replace(/^v/, '');
+      const wanted = { win: /\.exe$/i, mac: /\.dmg$/i, linux: /\.AppImage$/i }[platform];
+      const asset = (rel.assets || []).find((a) => wanted.test(a.name || ''));
+      if (latest) {
+        return {
+          ok: true,
+          update_available: cmpVer(latest, currentVersion) > 0,
+          latest,
+          url: asset ? asset.browser_download_url : (rel.html_url || null),
+          notes: rel.body || null,
+          mandatory: false,
+        };
+      }
+    }
+  } catch {}
+  // Fallback: instalações antigas continuam recebendo aviso pelo caminho legado.
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
     const res = await fetch(`${API_BASE}?action=version&platform=${platform}&current=${encodeURIComponent(currentVersion)}`, { signal: ctrl.signal });
     clearTimeout(timer);
-    const data = await res.json();
-    return data;
+    return await res.json();
   } catch (e) {
     return { ok: false, error: e.message };
   }
