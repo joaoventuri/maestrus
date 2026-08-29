@@ -7,6 +7,7 @@ let s = fs.readFileSync(p, 'utf8');
 const before = s;
 s = s.replace(/maestrus-win-\d+\.\d+\.\d+\.exe/g, `maestrus-win-${v}.exe`)
      .replace(/maestrus-mac-\d+\.\d+\.\d+\.dmg/g, `maestrus-mac-${v}.dmg`)
-     .replace(/Latest release \*\*v\d+\.\d+\.\d+\*\*/g, `Latest release **v${v}**`);
+     .replace(/Latest(?: release)? \*\*v\d+\.\d+\.\d+\*\*/g, `Latest **v${v}**`)
+     .replace(/Maestrus-\d+\.\d+\.\d+\.AppImage/g, `Maestrus-${v}.AppImage`);
 if (s !== before) { fs.writeFileSync(p, s); console.log(`README atualizado para v${v}`); }
 else console.log(`README já está em v${v}`);
