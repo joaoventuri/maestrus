@@ -20,7 +20,8 @@ const claudeAuth = require('./claude-auth'); // estado da conta Claude DO HOST (
 function ptyForRH(p) { const e = p && p.engine; return (e === 'codex' || e === 'codex-api') ? codexPty : claudePty; }
 const claudeProfiles = require('./claude-profiles');
 const claudePowers = require('./claude-powers');
-const turnQueue = require('./turn-queue'); // fila de turno (host é o dono)
+const turnQueue = require('./turn-queue');
+const runStore = require('./run-store'); // fila de turno (host é o dono)
 const persona = require('./persona');     // estilo de resposta global
 const path = require('path');
 const fs = require('fs');
@@ -110,13 +111,15 @@ function safeProjects() {
 // Guest read-only só pode ler; guest write pode operar sobre os projetos do
 // escopo. Canais que afetam a CONTA/HOST inteiro (delete, create, usage,
 // version, logout) NUNCA são expostos a um GUEST — só ao dono.
-const SHARE_READ_CHANNELS = new Set(['projects.list', 'projects.get', 'claude.loadHistory', 'ping', 'files.tree', 'files.read', 'files.readChunk', 'queue.list']);
+const SHARE_READ_CHANNELS = new Set(['projects.list', 'projects.get', 'claude.loadHistory', 'ping', 'files.tree', 'files.read', 'files.readChunk', 'queue.list', 'runs.list', 'runs.get', 'runs.log']);
 const SHARE_WRITE_CHANNELS = new Set([
   ...SHARE_READ_CHANNELS,
   'claude.send', 'claude.stop', 'projects.patch',
   'conversations.create', 'conversations.rename', 'conversations.delete',
   'sessions.uploadChunk', 'files.upload', 'files.uploadChunk', 'claude.compact', 'claude.compactRestore',
   'queue.list', 'queue.enqueue', 'queue.remove', 'queue.reorder', 'queue.clear', 'persona.get',
+  // Execuções em segundo plano: ver é leitura; iniciar/parar mexe na máquina.
+  'runs.list', 'runs.get', 'runs.log', 'runs.stop', 'runs.start', 'runs.activeCount',
 ]);
 // Canais GLOBAIS da conta — negados a QUALQUER não-dono (guest E membro): mexem
 // na conta Claude do host (logout desloga o OAuth do dono) ou vazam billing.
@@ -354,6 +357,12 @@ async function handleRpc(f, reply, fail) {
       case 'claudeProfiles.loginCancel': return reply(claudeProfiles.loginCancel());
       case 'persona.get': return reply({ style: persona.getStyle(), options: persona.listStyles() });
       case 'persona.set': return reply({ style: persona.setStyle(payload.style) });
+      case 'runs.list': return reply(runStore.list(payload.projectId));
+      case 'runs.get': return reply(runStore.get(payload.runId));
+      case 'runs.log': return reply(runStore.readLog(payload.runId));
+      case 'runs.stop': return reply(runStore.stop(payload.runId));
+      case 'runs.activeCount': return reply(runStore.activeCount(payload.projectId));
+      case 'runs.start': return reply(runStore.start({ projectId: payload.projectId, command: payload.command, cwd: payload.cwd, label: payload.label }));
       case 'queue.list': return reply(turnQueue.list(payload.projectId));
       case 'queue.enqueue': return reply(turnQueue.enqueue(payload.projectId, { text: payload.text, attachments: payload.attachments }));
       case 'queue.remove': return reply(turnQueue.remove(payload.projectId, payload.itemId));

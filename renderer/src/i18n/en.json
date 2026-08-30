@@ -974,5 +974,17 @@
     "host": "Host",
     "active": "in use",
     "hostOffline": "Host offline"
+  },
+  "runs": {
+    "title": "Background",
+    "running": "running",
+    "done": "done",
+    "error": "error",
+    "stopped": "stopped",
+    "empty": "Nothing running in the background.",
+    "stop": "Stop",
+    "openPanel": "Background runs",
+    "noOutput": "no output yet…",
+    "truncated": "log truncated"
   }
 }

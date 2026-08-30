@@ -8,6 +8,7 @@ const requirements = require('./requirements');
 const installer = require('./install');
 const claudeAuth = require('./claude-auth');
 const claudeProfiles = require('./claude-profiles');
+const runStore = require('./run-store');   // execuções em segundo plano (sobrevivem ao turno)
 const claudePty = require('./claude-pty');
 const codexPty = require('./codex-pty'); // engine Codex (OpenAI): codex exec --json
 // Escolhe o motor certo pelo engine do projeto. claude/cloud → Claude CLI;
@@ -2544,6 +2545,25 @@ ipcMain.handle('claude:stop', async (_e, projectId) => {
 
 // Watchdog de "ainda pensando?": o client pergunta o estado REAL do turno quando
 // perde o 'done' (relay caiu / minimizou) e o "pensando" ficaria preso.
+
+// ── Execuções em segundo plano ─────────────────────────────────────────────
+// Vivem no HOST e sobrevivem ao turno. Ver electron/run-store.js para o porquê.
+runStore.setOnChange((run) => {
+  try { mainWindow?.webContents.send('runs:changed', run); } catch {}
+  try { remoteHost.broadcastEvent && remoteHost.broadcastEvent({ type: 'runs', run }); } catch {}
+});
+ipcMain.handle('runs:list', async (_e, projectId) => runStore.list(projectId));
+ipcMain.handle('runs:get', async (_e, runId) => runStore.get(runId));
+ipcMain.handle('runs:log', async (_e, runId) => runStore.readLog(runId));
+ipcMain.handle('runs:stop', async (_e, runId) => runStore.stop(runId));
+ipcMain.handle('runs:activeCount', async (_e, projectId) => runStore.activeCount(projectId));
+ipcMain.handle('runs:start', async (_e, { projectId, command, cwd, label }) => {
+  try {
+    const p = projectId ? projectStore.get(String(projectId).split('#')[0]) : null;
+    return runStore.start({ projectId, command, cwd: cwd || (p && p.codeDir), label });
+  } catch (e) { return { error: String(e && e.message || e) }; }
+});
+
 ipcMain.handle('claude:isBusy', async (_e, projectId) => {
   try {
     if (remoteClient.isShared(projectId)) return remoteClient.statusShared(projectId);

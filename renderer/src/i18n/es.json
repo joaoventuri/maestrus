@@ -974,5 +974,17 @@
     "host": "Host",
     "active": "en uso",
     "hostOffline": "Host sin conexión"
+  },
+  "runs": {
+    "title": "Segundo plano",
+    "running": "en curso",
+    "done": "completado",
+    "error": "error",
+    "stopped": "detenido",
+    "empty": "Nada corriendo en segundo plano.",
+    "stop": "Detener",
+    "openPanel": "Ejecuciones en segundo plano",
+    "noOutput": "sin salida aún…",
+    "truncated": "registro truncado"
   }
 }

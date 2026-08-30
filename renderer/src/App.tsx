@@ -19,7 +19,7 @@ import UpdateBanner from './components/UpdateBanner';
 import TitleBar from './components/TitleBar';
 import Splash from './components/Splash';
 import { useT } from './lib/i18n';
-import { noteEvent, setActiveProject } from './lib/activity-store';
+import { noteEvent, setActiveProject, staleWorking, reconcile } from './lib/activity-store';
 
 // vosk-browser (~5.6MB com WASM) só carrega quando o wake word liga — fora do
 // bundle principal.
@@ -188,6 +188,30 @@ export default function App() {
   // TODOS os projetos — mesmo os que não estão abertos. A sidebar lê daqui.
   useEffect(() => {
     return window.maestrus.claude.onEvent((evt: any) => { noteEvent(evt); });
+  }, []);
+
+  // Reconciliação das bolinhas: o status vira "working" por evento e volta no
+  // 'done'. Se o 'done' se perde (relay reconectou, máquina dormiu, host emitiu
+  // sem ninguém ouvindo), a lista pisca para sempre num projeto que já acabou.
+  // Aqui perguntamos a quem executa — o host — e corrigimos. Só para os que
+  // estão parados há um tempo, para não virar polling.
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      for (const id of staleWorking(15000)) {
+        try {
+          const busy = await window.maestrus.claude.isBusy(id);
+          if (alive) reconcile(id, !!busy);
+        } catch {
+          // Host inalcançável: não mexe. Um projeto marcado como livre por erro
+          // de rede seria pior que a bolinha extra.
+        }
+      }
+    };
+    const iv = setInterval(tick, 8000);
+    const onVis = () => { if (!document.hidden) tick(); };  // voltar do sono é o caso clássico
+    document.addEventListener('visibilitychange', onVis);
+    return () => { alive = false; clearInterval(iv); document.removeEventListener('visibilitychange', onVis); };
   }, []);
   // Projeto aberto: limpa o "não lido" dele e marca como o ativo (terminar com
   // ele aberto = idle; com outro aberto = unread).

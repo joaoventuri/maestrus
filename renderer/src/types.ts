@@ -224,6 +224,23 @@ export interface ClaudeEvent {
   evt?: any;
 }
 
+/** Processo em segundo plano que sobrevive ao turno (ver electron/run-store.js). */
+export interface BackgroundRun {
+  id: string;
+  projectId: string | null;
+  label: string;
+  command: string;
+  cwd: string;
+  status: 'running' | 'done' | 'error' | 'stopped';
+  exitCode: number | null;
+  startedAt: number;
+  endedAt: number | null;
+  pid: number | null;
+  bytes: number;
+  truncated: boolean;
+  tail: string;
+}
+
 export interface McpServer {
   name: string;
   command: string;
@@ -364,6 +381,15 @@ declare global {
         install: (descriptor: McpSearchItem | { id?: string; label: string; transport: string; command?: string; args?: string[] | string; url?: string; headerTemplates?: { name: string; value: string }[]; fields?: McpField[]; source?: string }, values?: Record<string, string>) => Promise<{ ok: boolean; id?: string; error?: string }>;
         uninstall: (id: string) => Promise<{ ok: boolean }>;
       };
+      runs: {
+        list: (projectId?: string) => Promise<BackgroundRun[]>;
+        get: (runId: string) => Promise<BackgroundRun | null>;
+        log: (runId: string) => Promise<string | null>;
+        stop: (runId: string) => Promise<{ ok: boolean; error?: string }>;
+        start: (opts: { projectId?: string; command: string; cwd?: string; label?: string }) => Promise<BackgroundRun>;
+        activeCount: (projectId?: string) => Promise<number>;
+        onChange: (handler: (run: BackgroundRun) => void) => () => void;
+      };
       claudeAuth: {
         // projectId: login/status vão para a máquina que EXECUTA o projeto.
         status: (opts?: { local?: boolean; projectId?: string }) => Promise<{ ok: boolean; loggedIn: boolean; email?: string | null; method?: string | null; plan?: string | null; error?: string }>;
@@ -418,6 +444,9 @@ declare global {
       claude: {
         send: (projectId: string, message: string) => Promise<{ ok: boolean }>;
         stop: (projectId: string) => Promise<boolean>;
+        // Verdade do host sobre o turno: usado para reconciliar o indicador de
+        // atividade quando o evento 'done' se perde no caminho.
+        isBusy: (projectId: string) => Promise<boolean>;
         loadHistory: (projectId: string) => Promise<ChatMessage[]>;
         usage: (opts?: { scope?: 'all' | 'project'; projectId?: string }) => Promise<UsageReport>;
         version: () => Promise<string>;

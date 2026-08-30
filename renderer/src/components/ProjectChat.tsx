@@ -7,6 +7,7 @@ import QueuePanel from './QueuePanel';
 import AccountPicker from './AccountPicker';
 import { computeQuickReplies } from '../lib/quick-replies';
 import MetaPanel from './MetaPanel';
+import RunsPanel, { RunsChip } from './RunsPanel';
 import ClaudeMdEditor from './ClaudeMdEditor';
 import ClaudeCliConnect from './ClaudeCliConnect';
 import CodexCliConnect from './CodexCliConnect';
@@ -159,6 +160,7 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
   // A conta expirou de verdade (detectado no turno, não no auth status — que
   // reporta loggedIn mesmo com o refresh token morto).
   const [authExpired, setAuthExpired] = useState(false);
+  const [runsOpen, setRunsOpen] = useState(false);
   useEffect(() => { setAuthExpired(false); }, [project.id]);
 
   // Modelo REAL detectado da sessão (.jsonl) — mais fiel que project.model
@@ -1024,6 +1026,8 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
           <span className="chat-source" data-source={project.source}>{project.source}</span>
           {project.ssh && <SshStatusPill projectId={project.id} host={project.ssh.host} busy={busy} />}
           <ConnectionStatus variant="pill" hostLabel={project.remoteHostName || null} />
+          {/* Só aparece quando há processo vivo em segundo plano. */}
+          <RunsChip projectId={project.id} onOpen={() => setRunsOpen((v) => !v)} />
         </div>
         <EnginePicker value={engine} onChange={setEngine} avail={engineAvail} />
         {isMaestrus && (
@@ -1070,7 +1074,12 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
         />
       </header>
 
-      <MessageList messages={messages} streaming={busy} onOpenLink={onOpenLink} onSend={(txt) => send(txt)} />
+      {/* O painel divide o espaço com a conversa em vez de flutuar por cima —
+          dá para ler a saída de um processo e a resposta ao mesmo tempo. */}
+      <div className={`chat-body ${runsOpen ? 'with-runs' : ''}`}>
+        <MessageList messages={messages} streaming={busy} onOpenLink={onOpenLink} onSend={(txt) => send(txt)} />
+        {runsOpen && <RunsPanel projectId={project.id} onClose={() => setRunsOpen(false)} />}
+      </div>
 
       {!busy && (() => {
         const qr = computeQuickReplies(messages);
