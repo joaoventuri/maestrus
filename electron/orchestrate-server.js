@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const computerControl = require('./computer-control');
 const taskStore = require('./task-store');
 const taskQueue = require('./task-queue');
+const runStore = require('./run-store');
 
 let _info = null; // { port, token, url }
 let _server = null;
@@ -96,6 +97,35 @@ function start({ projectStore, dispatchFn, browser, getProjects, getProject } = 
             conversations: (p.conversations || []).map((c) => ({ id: c.id, title: c.title })),
           }));
         return jsonResponse(res, 200, { projects });
+      }
+
+      // Execução em segundo plano que SOBREVIVE ao turno. Sem isto, tudo que o
+      // agente lança em background morre quando o `claude -p` sai — o processo
+      // passa a pertencer ao Maestrus, com log e botão de parar na UI.
+      if (req.method === 'POST' && url.pathname === '/run/start') {
+        const body = await readBody(req);
+        if (!body.command) return jsonResponse(res, 400, { error: 'missing command' });
+        try {
+          const run = runStore.start({
+            projectId: body.project_id || null,
+            command: String(body.command),
+            cwd: body.cwd || undefined,
+            label: body.label || undefined,
+          });
+          return jsonResponse(res, 200, { ok: true, run });
+        } catch (e) { return jsonResponse(res, 400, { error: String(e && e.message || e) }); }
+      }
+      if (req.method === 'POST' && url.pathname === '/run/list') {
+        const body = await readBody(req);
+        return jsonResponse(res, 200, { ok: true, runs: runStore.list(body.project_id || undefined) });
+      }
+      if (req.method === 'POST' && url.pathname === '/run/stop') {
+        const body = await readBody(req);
+        return jsonResponse(res, 200, runStore.stop(body.run_id));
+      }
+      if (req.method === 'POST' && url.pathname === '/run/log') {
+        const body = await readBody(req);
+        return jsonResponse(res, 200, { ok: true, log: runStore.readLog(body.run_id) });
       }
 
       if (req.method === 'POST' && url.pathname === '/dispatch') {

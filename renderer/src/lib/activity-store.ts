@@ -73,6 +73,42 @@ export function noteEvent(evt: any): void {
   }
 }
 
+/**
+ * Quais projetos aparecem como "trabalhando" há mais tempo que `staleMs`?
+ *
+ * O status vira `working` por evento e só volta no `done`. Quando o `done` se
+ * perde — relay reconectou, cliente dormiu, host emitiu sem ninguém ouvindo —
+ * as três bolinhas piscam para sempre. Evento é otimista; o estado precisa ser
+ * reconciliado contra quem executa.
+ */
+export function staleWorking(staleMs = 15000): string[] {
+  const now = Date.now();
+  const out: string[] = [];
+  for (const [id, a] of map) {
+    if (a.status === 'working' && now - a.since > staleMs) out.push(id);
+  }
+  return out;
+}
+
+/**
+ * Corrige o status a partir da verdade do host. `busy=false` encerra o turno
+ * exatamente como um `done` faria, para o comportamento de unread ser o mesmo
+ * de um término normal.
+ */
+export function reconcile(id: string, busy: boolean): void {
+  const prev = map.get(id);
+  if (!prev) return;
+  if (busy) {
+    // Ainda rodando: renova o relógio para não reconciliar em loop.
+    map.set(id, { ...prev, since: Date.now() });
+    return;
+  }
+  if (prev.status !== 'working') return;
+  const status: ActivityStatus = id === activeId ? 'idle' : 'unread';
+  map.set(id, { status, phase: null, since: Date.now() });
+  emit();
+}
+
 // Chamado pelo App/MobileApp quando o projeto aberto muda. Abrir um projeto
 // limpa o unread dele na hora.
 export function setActiveProject(id: string | null): void {

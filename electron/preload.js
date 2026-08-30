@@ -258,6 +258,20 @@ contextBridge.exposeInMainWorld('maestrus', {
     pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
     pickFile: (filters) => ipcRenderer.invoke('dialog:pickFile', filters),
   },
+  // Execuções em segundo plano: vivem no host e sobrevivem ao fim do turno.
+  runs: {
+    list: (projectId) => ipcRenderer.invoke('runs:list', projectId),
+    get: (runId) => ipcRenderer.invoke('runs:get', runId),
+    log: (runId) => ipcRenderer.invoke('runs:log', runId),
+    stop: (runId) => ipcRenderer.invoke('runs:stop', runId),
+    start: (opts) => ipcRenderer.invoke('runs:start', opts),
+    activeCount: (projectId) => ipcRenderer.invoke('runs:activeCount', projectId),
+    onChange: (handler) => {
+      const fn = (_e, run) => handler(run);
+      ipcRenderer.on('runs:changed', fn);
+      return () => ipcRenderer.removeListener('runs:changed', fn);
+    },
+  },
   shell: {
     openFolder: (p) => ipcRenderer.invoke('shell:openFolder', p),
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),

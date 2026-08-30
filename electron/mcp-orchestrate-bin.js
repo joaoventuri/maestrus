@@ -95,6 +95,46 @@ const BROWSER_TOOLS = [
   },
 ];
 
+const RUN_TOOLS = [
+  {
+    name: 'run_background',
+    description: 'Roda um comando em SEGUNDO PLANO que CONTINUA VIVO depois que você terminar de responder. Use para servidor de dev, build longo, watcher, teste demorado — qualquer coisa que não deve morrer quando o turno acabar. Um comando normal (Bash) morre junto com a resposta; este não. Volta na hora com um run_id; a saída aparece no painel de execuções do projeto e você pode consultá-la com run_output.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'O comando de shell. Ex: "npm run dev", "pytest -q", "tail -f app.log".' },
+        label: { type: 'string', description: 'Nome curto para aparecer no painel. Ex: "dev server".' },
+        cwd: { type: 'string', description: 'Diretório de execução. Sem isso, usa a pasta do projeto.' },
+      },
+      required: ['command'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'run_list',
+    description: 'Lista as execuções em segundo plano deste projeto, com status (running/done/error/stopped) e quanto tempo levaram.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'run_output',
+    description: 'Lê a saída acumulada de uma execução em segundo plano (stdout+stderr). Use para conferir se o servidor subiu, se o build passou, o que o teste imprimiu.',
+    inputSchema: {
+      type: 'object',
+      properties: { run_id: { type: 'string', description: 'O id devolvido por run_background.' } },
+      required: ['run_id'], additionalProperties: false,
+    },
+  },
+  {
+    name: 'run_stop',
+    description: 'Encerra uma execução em segundo plano (e os processos-filhos dela).',
+    inputSchema: {
+      type: 'object',
+      properties: { run_id: { type: 'string' } },
+      required: ['run_id'], additionalProperties: false,
+    },
+  },
+];
+
 const ORCH_TOOLS = [
   {
     name: 'claui_list_projects',
@@ -228,9 +268,11 @@ const BROWSERS = BROWSER_NATIVE ? BROWSER_TOOLS : [];
 
 // O que o Claude vê: navegador (se nativo) + controle de PC em TODOS os
 // projetos (pra a voz JARVIS ser poderosa). Orquestração (dispatch) só no Maestrus.
+// RUN_TOOLS vale em TODO projeto, não só no orquestrador: qualquer conversa
+// pode precisar deixar um servidor ou um build rodando além do turno.
 const TOOLS = IS_ORCHESTRATOR
-  ? [...ORCH_TOOLS, ...COMPUTER_TOOLS, ...BROWSERS]
-  : [...COMPUTER_TOOLS, ...BROWSERS];
+  ? [...ORCH_TOOLS, ...RUN_TOOLS, ...COMPUTER_TOOLS, ...BROWSERS]
+  : [...RUN_TOOLS, ...COMPUTER_TOOLS, ...BROWSERS];
 
 function httpRequest(method, path, body) {
   return new Promise((resolve, reject) => {
@@ -329,6 +371,30 @@ async function callTool(name, args) {
         },
       ],
     };
+  }
+  if (name === 'run_background') {
+    const res = await httpRequest('POST', '/run/start', {
+      project_id: process.env.MAESTRUS_PROJECT_ID || undefined,
+      command: args.command, label: args.label, cwd: args.cwd,
+    });
+    if (!res.ok) return { content: [{ type: 'text', text: `(erro) ${res.error || 'falha ao iniciar'}` }], isError: true };
+    const r = res.run || {};
+    return { content: [{ type: 'text', text: `Rodando em segundo plano.\nrun_id: ${r.id}\nlabel: ${r.label}\nEle continua vivo depois desta resposta. Use run_output para ver a saída.` }] };
+  }
+  if (name === 'run_list') {
+    const res = await httpRequest('POST', '/run/list', { project_id: process.env.MAESTRUS_PROJECT_ID || undefined });
+    if (!res.ok) return { content: [{ type: 'text', text: `(erro) ${res.error || 'falha'}` }], isError: true };
+    const runs = (res.runs || []).map((r) => ({ run_id: r.id, label: r.label, status: r.status, exit: r.exitCode, command: r.command }));
+    return { content: [{ type: 'text', text: JSON.stringify(runs, null, 2) }] };
+  }
+  if (name === 'run_output') {
+    const res = await httpRequest('POST', '/run/log', { run_id: args.run_id });
+    if (!res.ok) return { content: [{ type: 'text', text: `(erro) ${res.error || 'falha'}` }], isError: true };
+    return { content: [{ type: 'text', text: res.log || '(sem saída)' }] };
+  }
+  if (name === 'run_stop') {
+    const res = await httpRequest('POST', '/run/stop', { run_id: args.run_id });
+    return { content: [{ type: 'text', text: res.ok ? 'Execução encerrada.' : `(erro) ${res.error || 'falha'}` }], isError: !res.ok };
   }
   if (name === 'claui_dispatch') {
     const res = await httpRequest('POST', '/dispatch', {

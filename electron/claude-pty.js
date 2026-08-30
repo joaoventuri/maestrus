@@ -534,6 +534,9 @@ function buildEnv(project) {
     env.MAESTRUS_ORCHESTRATE_URL = orchestrateInfo.url;
     env.MAESTRUS_ORCHESTRATE_TOKEN = orchestrateInfo.token;
     if (isMaestrus(project)) env.MAESTRUS_IS_ORCHESTRATOR = '1';
+    // O MCP precisa saber de qual projeto veio a chamada para registrar as
+    // execuções em segundo plano no lugar certo (e aparecerem no painel dele).
+    try { env.MAESTRUS_PROJECT_ID = String(project.id); } catch {}
   }
   // Engine "Claude API" (id interno 'cloud', por compat): usa a API KEY DA
   // ANTHROPIC do próprio usuário (BYOK, cofre cifrado) direto contra
