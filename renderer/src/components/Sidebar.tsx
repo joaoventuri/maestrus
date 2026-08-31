@@ -17,7 +17,6 @@ interface Props {
   onSettings: () => void;
   onMcp: () => void;
   onPowers?: () => void;
-  onCloud: () => void;
   onRemote: () => void;
   onKanban: () => void;
   onStarter: () => void;
@@ -25,7 +24,6 @@ interface Props {
   onRefresh?: () => void;   // botãozinho de refresh da lista de projetos
   // Ações de conversas (forks) e rename — executadas pelo App (dono do estado).
   onConvAction?: (action: 'fork' | 'forkConv' | 'renameProject' | 'renameConv' | 'deleteConv', projectId: string, convId?: string, value?: string) => void;
-  onShare?: () => void;
   mode?: 'server' | 'client' | null;
   cloudFirst?: boolean;   // web = "a cara" do container: esconde banner/badges de conexão
   clientHostName?: string | null;
@@ -45,7 +43,7 @@ function SourceIcon({ source }: { source: ProjectSource }) {
 }
 
 export default function Sidebar({
-  projects, activeId, onPick, onNew, onRequirements, onSettings, onMcp, onPowers, onCloud, onRemote, onKanban, onStarter, onDelete, onRefresh, onConvAction, onShare,
+  projects, activeId, onPick, onNew, onRequirements, onSettings, onMcp, onPowers, onRemote, onKanban, onStarter, onDelete, onRefresh, onConvAction,
   mode, cloudFirst, clientHostName, clientConnected, clientSyncing, clientHostCount, clientProjectCount,
 }: Props) {
   const maestrus = projects.find((p) => p.id === 'maestrus');
@@ -344,19 +342,9 @@ export default function Sidebar({
         <button className="nav-tool" onClick={onKanban}>
           <KanbanIcon size={13} /> {t('nav.kanban')}
         </button>
-        {!(window as any).maestrus?.isSelfhost && (
-          <button className="nav-tool" onClick={onCloud}>
-            <Cloud size={13} /> Maestrus Cloud
-          </button>
-        )}
         <button className="nav-tool" onClick={onRemote}>
           <Server size={13} /> {t('nav.remote')}
         </button>
-        {onShare && (
-          <button className="nav-tool" onClick={onShare}>
-            <Share2 size={13} /> {t('nav.share') || 'Share Workspace'}
-          </button>
-        )}
         {!isWeb && (
           <button className="nav-tool" onClick={onRequirements}>
             <ListChecks size={13} /> {t('nav.requirements')}

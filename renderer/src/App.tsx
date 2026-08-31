@@ -7,9 +7,7 @@ import RequirementsScreen from './components/RequirementsScreen';
 import SettingsScreen from './components/SettingsScreen';
 import ClaudePowersScreen from './components/ClaudePowersScreen';
 import SelfhostConnect from './components/SelfhostConnect';
-import CloudScreen from './components/CloudScreen';
 import RemoteAccess from './components/RemoteAccess';
-import ShareWorkspace from './components/ShareWorkspace';
 import Kanban from './components/Kanban';
 import StarterScreen from './components/StarterScreen';
 import ModePicker from './components/ModePicker';
@@ -26,7 +24,7 @@ import { noteEvent, setActiveProject, staleWorking, reconcile } from './lib/acti
 let _wakeMod: typeof import('./lib/wake-word') | null = null;
 async function getWakeMod() { if (!_wakeMod) _wakeMod = await import('./lib/wake-word'); return _wakeMod; }
 
-type View = 'chat' | 'requirements' | 'settings' | 'cloud' | 'remote' | 'kanban' | 'starter' | 'mode' | 'empty' | 'powers' | 'selfhost';
+type View = 'chat' | 'requirements' | 'settings' | 'remote' | 'kanban' | 'starter' | 'mode' | 'empty' | 'powers' | 'selfhost';
 
 export default function App() {
   const { t, lang } = useT();
@@ -41,7 +39,6 @@ export default function App() {
   const [view, setView] = useState<View>('empty');
   const [selfhost, setSelfhost] = useState<any>(null);
   const [showNew, setShowNew] = useState(false);
-  const [showShare, setShowShare] = useState(false);
   // Quando o Inicializador roda o fluxo com o marcador de voz, alvo = id do
   // Maestrus; o ProjectChat correspondente abre o modo voz ao montar e limpa.
   const [voiceTarget, setVoiceTarget] = useState<string | null>(null);
@@ -133,7 +130,9 @@ export default function App() {
           // SSO: sem conta salva mas com sessão do site ativa (acabou de
           // cadastrar/logar e foi redirecionado pro /web) → entra logado.
           if (!acc) { try { const s = await (window.maestrus.cloud as any).sessionLogin?.(); if (s && s.ok && s.account) acc = s.account; } catch {} }
-          if (!acc) { setView('cloud'); setBooting(false); return; }
+          // Sem serviço hospedado: a entrada do web é conectar a um host
+          // (código de pareamento) ou a um servidor próprio.
+          if (!acc) { setView('remote'); setBooting(false); return; }
           // Cloud-first: o web é "a cara" do container do usuário. Auto-conecta
           // no container (u{id}.maestrus.cloud, host cloud-u{id} no relay) e entra
           // direto no app — sem tela de pareamento. Os projetos do container
@@ -458,11 +457,9 @@ export default function App() {
         onSettings={() => setView('settings')}
         onMcp={() => setView('powers')}
         onPowers={() => setView('powers')}
-        onCloud={() => setView('cloud')}
         onRemote={() => setView('remote')}
         onKanban={() => setView('kanban')}
         onStarter={() => setView('starter')}
-        onShare={() => setShowShare(true)}
         onDelete={deleteProject}
         onRefresh={async () => { try { await window.maestrus.remote.refreshProjects?.(); } catch {} await reloadProjects(); }}
         onConvAction={handleConvAction}
@@ -499,11 +496,7 @@ export default function App() {
 
         {view === 'powers' && <ClaudePowersScreen />}
         {view === 'selfhost' && <SelfhostConnect info={selfhost} onConnected={async () => { await reloadProjects(); const fresh = await window.maestrus.projects.list().catch(() => []); setProjects(fresh); enterApp(fresh); }} />}
-        {view === 'cloud' && <CloudScreen onAuthed={isWeb
-          ? () => { setAppMode('client'); reloadProjects(); setView('remote'); }
-          : async () => { try { await window.maestrus.remote.discover?.(); } catch {} try { await window.maestrus.remote.refreshProjects?.(); } catch {} await reloadProjects(); }} />}
         {view === 'remote' && <RemoteAccess onConnected={reloadProjects} />}
-        {showShare && <ShareWorkspace onClose={() => setShowShare(false)} projects={projects} />}
         {view === 'kanban' && <Kanban projects={projects} />}
 
         {view === 'starter' && (
