@@ -787,7 +787,14 @@ function Chat({ t, project, onBack, onPatch, connected }: any) {
         }
         setMsgs((m) => { const last = m[m.length - 1]; if (last && last.role === 'assistant' && last._live) return [...m.slice(0, -1), { ...last, text: (last.text || '') + (e.text || '') }]; return [...m, { role: 'assistant', text: e.text || '', _live: true }]; });
       } else if (e.type === 'assistant-text') {
-        setMsgs((m) => { const last = m[m.length - 1]; if (last && last.role === 'assistant' && last._live) return [...m.slice(0, -1), { ...last, text: e.text || '', _live: false }]; return [...m, { role: 'assistant', text: e.text || '' }]; });
+        // Scan-back: o balão _live pode não ser o último (thinking/tool entram
+        // depois do texto na mesma mensagem) — senão duplica o texto final.
+        setMsgs((m) => {
+          for (let i = m.length - 1; i >= 0; i--) {
+            if (m[i].role === 'assistant' && m[i]._live) { const next = [...m]; next[i] = { ...next[i], text: e.text || '', _live: false }; return next; }
+          }
+          return [...m, { role: 'assistant', text: e.text || '' }];
+        });
       } else if (e.type === 'thinking') {
         setMsgs((m) => [...m, { role: 'thinking', text: (e.text || '').slice(0, 200) }]);
       } else if (e.type === 'ask-user-question') {

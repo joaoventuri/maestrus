@@ -599,19 +599,48 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
         return;
       }
       if (evt.type === 'assistant-text' && evt.text) {
+        // O bloco completo REPLAYA o que os deltas já mostraram. Procura o
+        // pendente DE TRÁS PRA FRENTE — o balão pode não ser o último quando a
+        // mensagem intercala thinking/tool depois do texto; sem isso o texto
+        // final virava um SEGUNDO balão e o pendente ficava órfão pulsando.
         setMessages((m) => {
-          const last = m[m.length - 1];
-          if (last && last.role === 'assistant' && last.pending) {
-            const next = [...m];
-            next[next.length - 1] = { ...last, text: evt.text!, pending: false };
-            return next;
+          for (let i = m.length - 1; i >= 0; i--) {
+            if (m[i].role === 'assistant' && m[i].pending) {
+              const next = [...m];
+              next[i] = { ...next[i], text: evt.text!, pending: false };
+              return next;
+            }
           }
           return [...m, { role: 'assistant', text: evt.text }];
         });
         return;
       }
+      if ((evt as any).type === 'thinking-delta' && evt.text) {
+        // Pensamento em tempo real: mesmo padrão do delta de texto.
+        setMessages((m) => {
+          const last = m[m.length - 1];
+          if (last && last.role === 'thinking' && last.pending) {
+            const next = [...m];
+            next[next.length - 1] = { ...last, text: (last.text || '') + evt.text };
+            return next;
+          }
+          return [...m, { role: 'thinking', text: evt.text, pending: true }];
+        });
+        return;
+      }
       if (evt.type === 'thinking' && evt.text) {
-        setMessages((m) => [...m, { role: 'thinking', text: evt.text }]);
+        // Fecha o balão que os deltas construíram; só cria um novo se o
+        // streaming não rodou (ex.: histórico ou host antigo sem thinking-delta).
+        setMessages((m) => {
+          for (let i = m.length - 1; i >= 0; i--) {
+            if (m[i].role === 'thinking' && m[i].pending) {
+              const next = [...m];
+              next[i] = { ...next[i], text: evt.text!, pending: false };
+              return next;
+            }
+          }
+          return [...m, { role: 'thinking', text: evt.text }];
+        });
         return;
       }
       if (evt.type === 'ask-user-question') {

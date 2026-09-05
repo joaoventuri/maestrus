@@ -2141,6 +2141,10 @@ ipcMain.handle('cloud:openCloud', async (_e, { deviceId, name }) => {
 });
 
 ipcMain.handle('remote:connect', async (_e, code) => {
+  // Um campo só pra qualquer código: se o que colaram é um CONVITE (base64
+  // longo ou maestrus://), entra pela sala do segredo — sem conta. O código de
+  // conta (8 chars) segue pelo pair_redeem de sempre.
+  if (invite.parse(code).ok) return joinInvite(code);
   const pr = await cloud.pairRedeem(code);
   if (!pr || !pr.ok || !pr.host_device_id) return { ok: false, error: (pr && pr.error) || 'pair_failed' };
   const r = await startRelayClient(pr.host_device_id, pr.host_name);

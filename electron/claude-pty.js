@@ -908,6 +908,11 @@ function handleEvent(project, evt) {
     if (ev.type === 'content_block_delta' && ev.delta) {
       if (ev.delta.type === 'text_delta') {
         emit({ projectId: project.id, type: 'delta', text: ev.delta.text, timestamp: Date.now() });
+      } else if (ev.delta.type === 'thinking_delta' && ev.delta.thinking) {
+        // Com thinking ligado, a MAIOR parte do turno é pensamento entre tools.
+        // Descartar o delta deixava a tela muda até o bloco fechar — o usuário
+        // via "tool, tool, tool" e achava que a IA não estava respondendo.
+        emit({ projectId: project.id, type: 'thinking-delta', text: ev.delta.thinking, timestamp: Date.now() });
       }
     }
     return;

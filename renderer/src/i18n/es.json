@@ -546,10 +546,10 @@
     "errGeneric": "Algo salió mal. Inténtalo de nuevo.",
     "errCode": "Código inválido o expirado. Pide al host que genere uno nuevo.",
     "connectTitle": "Conectar a un dispositivo",
-    "connectSub": "Usa el Claude de otra máquina desde aquí",
+    "connectSub": "Pega el código que apareció en la otra máquina — con o sin cuenta.",
     "codeLabel": "Código de conexión",
     "connect": "Conectar",
-    "connectExplain": "Ingresa el código mostrado en la máquina host (Acceso remoto → Ser un Host). Sus proyectos aparecerán en tu barra lateral con una insignia de servidor.",
+    "connectExplain": "Sirve el código de la cuenta (corto) y la invitación sin cuenta (larga o leída del QR). La app detecta cuál es.",
     "connectedTo": "Conectado a",
     "connectedHint": "Los proyectos del host ahora están en tu barra lateral (insignia de servidor). Abre uno y cada prompt corre en el Claude de esa máquina.",
     "disconnect": "Desconectar",
@@ -576,7 +576,8 @@
     "wsSub": "Workspaces a los que fuiste invitado como miembro",
     "wsConnect": "Conectar",
     "wsOffline": "La instancia del dueño está apagada ahora. Pídele que la encienda e inténtalo de nuevo.",
-    "wsHint": "Te conectas a la instancia del dueño y trabajas en sus proyectos. Tu cuenta y tus proyectos quedan intactos."
+    "wsHint": "Te conectas a la instancia del dueño y trabajas en sus proyectos. Tu cuenta y tus proyectos quedan intactos.",
+    "codePlaceholder": "Pega aquí el código generado en el host"
   },
   "mobile": {
     "tagline": "Controla tus proyectos desde cualquier lugar",

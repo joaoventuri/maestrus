@@ -1730,7 +1730,7 @@ html, body, #root {
 .cloud-submit {
   width: 100%; margin-top: 4px; padding: 12px; border-radius: 10px; border: none;
   background: var(--accent); color: #fff; font-family: var(--sans); font-size: 15px; font-weight: 600;
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
 }
 .cloud-submit:hover { background: var(--accent-hover); }
 .cloud-submit:disabled { opacity: .6; cursor: not-allowed; }
@@ -1865,6 +1865,25 @@ html, body, #root {
   padding: 8px 14px; color: var(--text);
 }
 .remote-code code { font-family: var(--mono); font-size: 20px; letter-spacing: 3px; font-weight: 600; }
+/* Convite: código longo — sem o corpo de display do código curto. */
+.remote-code.long code { font-size: 13px; letter-spacing: 0; font-weight: 500; }
+
+/* Self-host recolhido: opção avançada não compete com o fluxo normal. */
+.remote-advanced {
+  width: 100%; background: var(--bg-1); border: 1px solid var(--border);
+  border-radius: 14px; padding: 0;
+}
+.remote-advanced summary {
+  display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+  padding: 14px 18px; font-size: 13.5px; color: var(--text-dim); user-select: none;
+}
+.remote-advanced summary::-webkit-details-marker { display: none; }
+.remote-advanced .remote-adv-chev { transition: transform .18s ease; }
+.remote-advanced[open] .remote-adv-chev { transform: rotate(180deg); }
+.remote-advanced .remote-adv-body {
+  display: flex; flex-direction: column; gap: 10px; padding: 0 18px 16px; align-items: flex-start;
+}
+.remote-advanced .remote-adv-body .cloud-field { max-width: 420px; }
 .remote-how {
   width: 100%; margin-top: 14px; padding: 12px 14px; background: var(--bg-0);
   border: 1px solid var(--border); border-radius: 10px;

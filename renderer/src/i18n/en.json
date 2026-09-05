@@ -546,10 +546,10 @@
     "errGeneric": "Something went wrong. Try again.",
     "errCode": "Invalid or expired code. Ask the host to generate a new one.",
     "connectTitle": "Connect to a device",
-    "connectSub": "Use another machine's Claude from here",
+    "connectSub": "Paste the code shown on the other machine — with or without an account.",
     "codeLabel": "Connection code",
     "connect": "Connect",
-    "connectExplain": "Enter the code shown on the host machine (Remote Access → Be a Host). Its projects will appear in your sidebar with a server badge.",
+    "connectExplain": "Works with the account code (short) and the no-account invite (long, or scanned from the QR). The app figures out which one it is.",
     "connectedTo": "Connected to",
     "connectedHint": "The host's projects are now in your sidebar (server badge). Open one and every prompt runs on that machine's Claude.",
     "disconnect": "Disconnect",
@@ -576,7 +576,8 @@
     "wsSub": "Workspaces you were invited to as a member",
     "wsConnect": "Connect",
     "wsOffline": "The owner instance is offline right now. Ask the owner to start it and try again.",
-    "wsHint": "You connect to the owner instance and work on their projects. Your own account and projects stay untouched."
+    "wsHint": "You connect to the owner instance and work on their projects. Your own account and projects stay untouched.",
+    "codePlaceholder": "Paste the code generated on the host"
   },
   "mobile": {
     "tagline": "Control your projects from anywhere",
