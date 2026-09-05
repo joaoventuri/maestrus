@@ -23,6 +23,15 @@ const { verifyToken, FRAME, frame, parseFrame } = require('./protocol');
 function createRelay({ port = 0, secret, logger = console, maxFrameBytes = 16 << 20 } = {}) {
   if (!secret) throw new Error('relay: secret obrigatório');
   const rooms = new Map();
+  // room -> prova de posse do segredo. Em memória de propósito: o relay não
+  // persiste nada, e reiniciar apenas refaz o TOFU na próxima conexão.
+  const roomProofs = new Map();
+  const timingSafeEq = (a, b) => {
+    try {
+      const A = Buffer.from(String(a)), B = Buffer.from(String(b));
+      return A.length === B.length && require('crypto').timingSafeEqual(A, B);
+    } catch { return false; }
+  };
 
   const roomOf = (uid) => {
     let r = rooms.get(uid);
@@ -37,7 +46,28 @@ function createRelay({ port = 0, secret, logger = console, maxFrameBytes = 16 <<
     let q;
     try { q = new URL(req.url, 'http://x'); } catch { ws.close(4000, 'bad-url'); return; }
     const token = q.searchParams.get('token');
-    const claims = verifyToken(token, secret);
+    let claims = verifyToken(token, secret);
+
+    // ── Salas por CONVITE (sem conta) ────────────────────────────────────
+    // O par host/client compartilha um segredo; a sala é o hash dele. O relay
+    // nunca recebe o segredo — recebe só uma PROVA de posse, que é o mesmo
+    // HMAC para todo mundo que tem o segredo. O primeiro a chegar fixa a prova
+    // da sala; os seguintes precisam apresentar a mesma. Assim o encaminhador
+    // continua burro (não sabe quem você é) e ainda assim ninguém entra numa
+    // sala alheia sabendo apenas o id dela.
+    if (!claims) {
+      const room = q.searchParams.get('room');
+      const proof = q.searchParams.get('proof');
+      const did = q.searchParams.get('did');
+      const wantRole = q.searchParams.get('role') === 'host' ? 'host' : 'client';
+      if (room && proof && did && /^[A-Za-z0-9_-]{16,64}$/.test(room) && /^[A-Za-z0-9_-]{16,128}$/.test(proof)) {
+        const known = roomProofs.get(room);
+        if (!known) roomProofs.set(room, proof);                 // trust on first use
+        else if (!timingSafeEq(known, proof)) { ws.close(4001, 'bad-proof'); return; }
+        claims = { uid: room, did: String(did), role: wantRole, viaInvite: true };
+      }
+    }
+
     if (!claims || !claims.uid || !claims.did) { ws.close(4001, 'unauthorized'); return; }
 
     const uid = String(claims.uid);
@@ -135,7 +165,7 @@ function createRelay({ port = 0, secret, logger = console, maxFrameBytes = 16 <<
           // deviceIds mortos, e _send falha em silêncio).
           broadcast(room, deviceId, FRAME.PRESENCE, { deviceId, online: false }, 'host');
         }
-        if (room.size === 0) rooms.delete(uid);
+        if (room.size === 0) { rooms.delete(uid); roomProofs.delete(uid); }
       }
       logger.log(`[relay] - ${member.role} uid=${uid} dev=${deviceId}`);
     });
