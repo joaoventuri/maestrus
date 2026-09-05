@@ -425,13 +425,19 @@ function Connect({ t, onAccount, onLogout }: any) {
     if (!r || !r.ok) setErr(t('mobile.badCode'));
     setCloudBusy(null);
   }
+  // O código de conta é curto e maiúsculo; o convite é base64url e maiúsculo
+  // QUEBRA ele. Normaliza pelo formato, não pelo hábito.
+  function normCode(v: string) {
+    const raw = String(v || '').trim();
+    return (raw.length > 14 || /^maestrus:\/\//i.test(raw)) ? raw : raw.toUpperCase();
+  }
   async function go(c?: string) {
-    const val = (c ?? code).trim().toUpperCase(); if (!val) return; setBusy(true); setErr('');
+    const val = normCode(c ?? code); if (!val) return; setBusy(true); setErr('');
     const r = await M().remote.connect(val);
     if (!r.ok) setErr(t('mobile.badCode'));
     setBusy(false);
   }
-  if (scan) return <QrScanner t={t} onClose={() => setScan(false)} onResult={(c: string) => { setScan(false); setCode(c.toUpperCase()); go(c); }} />;
+  if (scan) return <QrScanner t={t} onClose={() => setScan(false)} onResult={(c: string) => { setScan(false); setCode(normCode(c)); go(c); }} />;
 
   // Enquanto procura as máquinas da conta (primeira tentativa)
   if (discovering && !manual) return (
@@ -478,7 +484,7 @@ function Connect({ t, onAccount, onLogout }: any) {
         {err && <div className="m-err">{err}</div>}
         <button type="button" className="m-scan-btn" onClick={() => setScan(true)}><QrCode size={18} /> {t('mobile.scanQr')}</button>
         <label className="m-label">{t('mobile.codeLabel')}</label>
-        <input className="m-code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="XXXXXXXX" maxLength={12} />
+        <input className="m-code" value={code} onChange={(e) => setCode(normCode(e.target.value))} placeholder="XXXXXXXX" />
         <p className="m-hint">{t('mobile.codeHint')}</p>
         <button disabled={busy || !code.trim()}>{busy ? t('mobile.connecting') : t('mobile.connect')}</button>
       </form>

@@ -986,5 +986,30 @@
     "openPanel": "Execuções em segundo plano",
     "noOutput": "sem saída ainda…",
     "truncated": "log truncado"
+  },
+  "invite": {
+    "hostTitle": "Parear sem conta",
+    "hostSub": "Gere um convite e leia no outro aparelho. Nenhum cadastro.",
+    "explain": "As duas máquinas combinam um segredo entre si. O relay só encaminha — não sabe quem você é nem o que passa por ele.",
+    "generate": "Gerar convite",
+    "showCode": "Mostrar código",
+    "newCode": "Gerar novo código",
+    "rotate": "Trocar segredo",
+    "revoke": "Encerrar sala",
+    "codeHint": "Cole este código no outro aparelho (ou leia o QR).",
+    "expiresIn": "expira em",
+    "roomOpen": "Sala aberta — esperando o outro aparelho",
+    "roomStarting": "Abrindo a sala…",
+    "security": "O convite vale por tempo limitado. Trocar o segredo desconecta quem já entrou.",
+    "errCreate": "Não consegui abrir a sala.",
+    "joinTitle": "Tenho um convite",
+    "joinSub": "Cole o código gerado no outro aparelho.",
+    "codeLabel": "Código do convite",
+    "join": "Conectar",
+    "joinExplain": "Funciona sem conta: o código já traz o endereço do relay e o segredo da sala.",
+    "joinedTo": "Conectado a",
+    "leave": "Sair da sala",
+    "errCode": "Código inválido.",
+    "errExpired": "Esse convite expirou — peça outro."
   }
 }

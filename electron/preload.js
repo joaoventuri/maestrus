@@ -347,6 +347,21 @@ contextBridge.exposeInMainWorld('maestrus', {
     reconnect: () => ipcRenderer.invoke('selfhost:reconnect'),
     forget: () => ipcRenderer.invoke('selfhost:forget'),
   },
+  // Pareamento por convite (sem conta): host gera, client cola.
+  invite: {
+    create: (opts) => ipcRenderer.invoke('invite:create', opts || {}),
+    state: () => ipcRenderer.invoke('invite:state'),
+    revoke: () => ipcRenderer.invoke('invite:revoke'),
+    join: (code) => ipcRenderer.invoke('invite:join', code),
+    leave: () => ipcRenderer.invoke('invite:leave'),
+    // Convite aceito por deep link (maestrus://pair) — a UI precisa saber que
+    // entrou numa sala sem ter clicado em nada aqui dentro.
+    onJoined: (fn) => {
+      const h = (_e, r) => fn(r);
+      ipcRenderer.on('invite:joined', h);
+      return () => ipcRenderer.removeListener('invite:joined', h);
+    },
+  },
   remote: {
     hostState: () => ipcRenderer.invoke('remote:hostState'),
     hostEnable: () => ipcRenderer.invoke('remote:hostEnable'),

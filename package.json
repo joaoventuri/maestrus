@@ -1,6 +1,6 @@
 {
   "name": "maestrus",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "maestrus": {
     "lastBundledClaudeCli": "2.1.161"
   },
@@ -20,7 +20,7 @@
     "build:web": "vite build --config vite.web.config.ts",
     "start": "electron .",
     "build:linux": "npm run build:renderer && electron-builder --linux --x64",
-    "test": "node scripts/check-i18n.mjs && node --test \"electron/**/*.test.js\" \"relay/**/*.test.js\"",
+    "test": "node scripts/check-i18n.mjs && node --test \"electron/**/*.test.js\" \"relay/**/*.test.js\" && vitest run",
     "test:web": "vitest run",
     "typecheck": "tsc --noEmit -p renderer/tsconfig.json",
     "publish:web": "bash scripts/publish-frontend.sh",
@@ -93,6 +93,12 @@
         "repo": "maestrus"
       }
     ],
+    "protocols": {
+      "name": "Maestrus",
+      "schemes": [
+        "maestrus"
+      ]
+    },
     "files": [
       "electron/**/*",
       "dist-renderer/**/*",

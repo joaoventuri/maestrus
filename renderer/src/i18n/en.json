@@ -986,5 +986,30 @@
     "openPanel": "Background runs",
     "noOutput": "no output yet…",
     "truncated": "log truncated"
+  },
+  "invite": {
+    "hostTitle": "Pair without an account",
+    "hostSub": "Generate an invite and read it on the other device. No signup.",
+    "explain": "The two machines agree on a secret between themselves. The relay only forwards — it doesn't know who you are or what goes through it.",
+    "generate": "Generate invite",
+    "showCode": "Show code",
+    "newCode": "Generate new code",
+    "rotate": "Rotate secret",
+    "revoke": "Close room",
+    "codeHint": "Paste this code on the other device (or scan the QR).",
+    "expiresIn": "expires in",
+    "roomOpen": "Room open — waiting for the other device",
+    "roomStarting": "Opening the room…",
+    "security": "The invite is time-limited. Rotating the secret disconnects whoever already joined.",
+    "errCreate": "Couldn't open the room.",
+    "joinTitle": "I have an invite",
+    "joinSub": "Paste the code generated on the other device.",
+    "codeLabel": "Invite code",
+    "join": "Connect",
+    "joinExplain": "Works without an account: the code carries the relay address and the room secret.",
+    "joinedTo": "Connected to",
+    "leave": "Leave room",
+    "errCode": "Invalid code.",
+    "errExpired": "That invite expired — ask for another one."
   }
 }

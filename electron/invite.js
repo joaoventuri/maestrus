@@ -125,4 +125,15 @@ function connectQuery(secret, deviceId, role) {
   return `room=${room}&proof=${proofFor(secret)}&did=${encodeURIComponent(deviceId)}&role=${role === 'host' ? 'host' : 'client'}`;
 }
 
-module.exports = { proofFor, connectQuery, VERSION, newSecret, roomFromSecret, create, parse, toUrl, signToken, DEFAULT_TTL_MS };
+/**
+ * URL completa de conexão ao relay. Existe aqui (e não no main) porque montar
+ * query à mão erra fácil: o relay pode já vir com querystring, e nesse caso um
+ * '?' a mais transforma a prova em parâmetro ignorado — a conexão cai em
+ * 'unauthorized' sem explicar por quê.
+ */
+function connectUrl(relayUrl, secret, deviceId, role) {
+  const base = String(relayUrl || '');
+  return `${base}${base.includes('?') ? '&' : '?'}${connectQuery(secret, deviceId, role)}`;
+}
+
+module.exports = { connectUrl, proofFor, connectQuery, VERSION, newSecret, roomFromSecret, create, parse, toUrl, signToken, DEFAULT_TTL_MS };

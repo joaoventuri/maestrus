@@ -986,5 +986,30 @@
     "openPanel": "Ejecuciones en segundo plano",
     "noOutput": "sin salida aún…",
     "truncated": "registro truncado"
+  },
+  "invite": {
+    "hostTitle": "Vincular sin cuenta",
+    "hostSub": "Genera una invitación y léela en el otro dispositivo. Sin registro.",
+    "explain": "Las dos máquinas acuerdan un secreto entre ellas. El relay solo reenvía — no sabe quién eres ni qué pasa por él.",
+    "generate": "Generar invitación",
+    "showCode": "Mostrar código",
+    "newCode": "Generar código nuevo",
+    "rotate": "Cambiar secreto",
+    "revoke": "Cerrar sala",
+    "codeHint": "Pega este código en el otro dispositivo (o escanea el QR).",
+    "expiresIn": "caduca en",
+    "roomOpen": "Sala abierta — esperando al otro dispositivo",
+    "roomStarting": "Abriendo la sala…",
+    "security": "La invitación caduca. Cambiar el secreto desconecta a quien ya entró.",
+    "errCreate": "No pude abrir la sala.",
+    "joinTitle": "Tengo una invitación",
+    "joinSub": "Pega el código generado en el otro dispositivo.",
+    "codeLabel": "Código de invitación",
+    "join": "Conectar",
+    "joinExplain": "Funciona sin cuenta: el código ya trae la dirección del relay y el secreto de la sala.",
+    "joinedTo": "Conectado a",
+    "leave": "Salir de la sala",
+    "errCode": "Código inválido.",
+    "errExpired": "Esa invitación caducó — pide otra."
   }
 }

@@ -103,3 +103,26 @@ test('a query de conexao leva sala e prova, nunca o segredo', () => {
   assert.ok(q.includes('room=') && q.includes('proof=') && q.includes('role=host'));
   assert.ok(!q.includes(s), 'o SEGREDO nao pode viajar para o relay');
 });
+
+test('connectUrl preserva querystring que ja existe no relay', () => {
+  const c = invite.create({ relayUrl: 'wss://r/ws?x=1' });
+  const u = invite.connectUrl('wss://r/ws?x=1', c.secret, 'dev-1', 'host');
+  assert.ok(u.startsWith('wss://r/ws?x=1&'), u);
+  const q = new URL(u.replace('wss://', 'https://')).searchParams;
+  assert.equal(q.get('x'), '1');
+  assert.equal(q.get('room'), c.room);
+  assert.equal(q.get('proof'), invite.proofFor(c.secret));
+  assert.equal(q.get('did'), 'dev-1');
+  assert.equal(q.get('role'), 'host');
+});
+
+test('connectUrl abre a query quando o relay nao tem nenhuma', () => {
+  const c = invite.create({ relayUrl: 'wss://r/ws' });
+  assert.ok(invite.connectUrl('wss://r/ws', c.secret, 'd', 'client').startsWith('wss://r/ws?room='));
+});
+
+test('papel invalido cai pra client — nunca vira host por engano', () => {
+  const c = invite.create({ relayUrl: 'wss://r/ws' });
+  const u = invite.connectUrl('wss://r/ws', c.secret, 'd', 'qualquer-coisa');
+  assert.ok(u.includes('role=client'), u);
+});

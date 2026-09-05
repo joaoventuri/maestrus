@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Server, Loader2, Wifi, WifiOff, Copy, Check, ShieldCheck, Smartphone, Link2, CloudCog, Globe, Pause as PauseIcon, Trash2, Users } from 'lucide-react';
 import { CloudAccount, RemoteHostState, RemoteClientState, CloudSession } from '../types';
 import { useT } from '../lib/i18n';
+import InvitePairing from './InvitePairing';
 
 // "Remote Access" — HOST: vira servidor e gera código/QR. CLIENT: conecta num
 // host com o código e opera os projetos dele (CLI do host) por aqui.
@@ -172,6 +173,10 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
           ))}
         </div>
 
+        {/* Convite: parear sem conta. Vem primeiro porque é o caminho que
+            funciona pra quem acabou de instalar e não tem cadastro nenhum. */}
+        {tab === 'host' && !isWeb && <InvitePairing mode="host" />}
+
         {/* ── ESTA MÁQUINA (HOST) ────────────────────────────────────────── */}
         {tab === 'host' && !isWeb && (
           <div className="cloud-card remote-card span-2">
@@ -229,6 +234,7 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
         {/* ── CONEXÕES (discovery + parear + dispositivos) ───────────────── */}
         {tab === 'connect' && (
           <>
+            <InvitePairing mode="connect" onConnected={() => onConnected?.()} />
             {account && !isWeb && (
               <div className="cloud-card remote-card span-2">
                 <div className="remote-head">

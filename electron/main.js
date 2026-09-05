@@ -162,16 +162,28 @@ let isQuitting = false;
 // Instância única: se o Maestrus já está aberto (mesmo em segundo plano/bandeja),
 // uma 2ª tentativa de abrir NÃO sobe outro processo — traz a janela existente
 // pro foco. Sem o lock, o usuário acabava com vários Maestrus rodando.
+// macOS entrega o deep link por 'open-url' — que pode chegar antes da janela
+// existir. Guarda pra tratar no boot em vez de perder o convite.
+let _pendingDeepLink = null;
+app.on('open-url', (e, url) => {
+  e.preventDefault();
+  if (mainWindow && !mainWindow.isDestroyed()) handleDeepLink(url);
+  else _pendingDeepLink = url;
+});
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_e, argv) => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       if (!mainWindow.isVisible()) mainWindow.show();
       mainWindow.focus();
     }
+    // Windows/Linux entregam o deep link como argumento da 2ª instância.
+    const link = deepLinkFromArgv(argv);
+    if (link) handleDeepLink(link);
   });
 }
 
@@ -668,7 +680,15 @@ app.whenReady().then(async () => {
   // "Be a Host always on" (default): se logado, vira host sozinho pra a máquina
   // já aparecer pros outros dispositivos da conta (web/mobile/outro desktop).
   // Pequeno atraso pra a janela e o estado assentarem antes de anunciar.
-  setTimeout(() => { maybeAutoHost(); autoReconnectShares().catch(() => {}); }, 1500);
+  setTimeout(() => { maybeAutoHost(); resumeInvites(); autoReconnectShares().catch(() => {}); }, 1500);
+  // `maestrus://` — o convite vira link clicável e QR que abre o app já pareando.
+  try {
+    if (process.defaultApp && process.argv.length >= 2) app.setAsDefaultProtocolClient('maestrus', process.execPath, [path.resolve(process.argv[1])]);
+    else app.setAsDefaultProtocolClient('maestrus');
+  } catch {}
+  // App ABERTO pelo link (a janela ainda estava nascendo quando ele chegou).
+  const bootLink = _pendingDeepLink || deepLinkFromArgv(process.argv);
+  if (bootLink) setTimeout(() => handleDeepLink(bootLink), 2000);
   // BYOK do OpenAI: busca a chave do servidor (se logado) e mantém o cache fresco.
   openaiKey.startWatcher();
   setTimeout(() => { openaiKey.fetchAndCache().catch(() => {}); }, 2500);
@@ -1717,6 +1737,9 @@ ipcMain.handle('app:setLaunchAtLogin', async (_e, on) => {
 function maybeAutoHost(attempt = 0) {
   try {
     if (!(hostAlwaysOn() && cloud.getAccount && cloud.getAccount())) return;
+    // Convite ativo manda: o relay só aceita UMA conexão por deviceId, então
+    // subir o host da conta derrubaria a sala que o usuário abriu de propósito.
+    if (getInviteHost()) return;
     startHost().then((r) => {
       // Falhou (sem token / rede) → tenta de novo (até 3x, backoff) pra o host
       // realmente subir sozinho no boot mesmo com rede instável.
@@ -1725,6 +1748,143 @@ function maybeAutoHost(attempt = 0) {
   } catch {}
 }
 ipcMain.handle('remote:pairCreate', async () => cloud.pairCreate());
+
+// ─── Pareamento por CONVITE (sem conta, sem backend) ────────────────────────
+// O caminho antigo (pairCreate/pairRedeem) exige conta no maestrus.cloud: o
+// backend é quem diz "essas duas máquinas são da mesma pessoa". Num projeto
+// aberto isso é uma dependência que não deveria existir — quem instala do zero
+// ficava sem parear. Aqui a sala é um SEGREDO compartilhado pelas duas pontas
+// (electron/invite.js): o host gera, o client cola, e ninguém precisa de
+// cadastro em servidor nenhum. O relay continua sendo só encaminhador.
+const invite = require('./invite');
+
+function inviteRelayUrl() {
+  try { const u = projectStore.getSetting('relay_url'); if (u) return String(u); } catch {}
+  return require('./config').RELAY_URL;
+}
+// URL de conexão do convite: sem token: a autorização é a PROVA de posse do
+// segredo, que vai na query. O RelayLink ainda concatena `&token=` — o relay
+// não valida esse token vazio e cai no caminho de sala por convite.
+function inviteUrl(secret, deviceId, role) {
+  return invite.connectUrl(inviteRelayUrl(), secret, deviceId, role);
+}
+function getInviteHost() { try { return projectStore.getSetting('invite_host') || null; } catch { return null; } }
+function getInviteClient() { try { return projectStore.getSetting('invite_client') || null; } catch { return null; } }
+
+// Sobe o host na sala do convite. Diferente de startHost(): não pede conta e
+// não renova token (não existe token pra renovar — a prova não expira).
+function startHostViaInvite(secret) {
+  if (!secret) return { ok: false, error: 'no_secret' };
+  if (_hostRefreshTimer) { clearInterval(_hostRefreshTimer); _hostRefreshTimer = null; }
+  try { remoteClient.disconnect(); } catch {}
+  const did = cloud.getDeviceId();
+  return remoteHost.start({ url: inviteUrl(secret, did, 'host'), token: '', deviceId: did });
+}
+
+// Entra na sala como client. Reusa a descoberta: o relay manda HOST_LIST da
+// sala, e o fluxo normal (presença → projects.list) segue igual ao da conta.
+function startClientViaInvite(secret) {
+  if (!secret) return { ok: false, error: 'no_secret' };
+  if (_clientRefreshTimer) { clearInterval(_clientRefreshTimer); _clientRefreshTimer = null; }
+  const did = clientDid();
+  remoteClient.setSelfHostId(cloud.getDeviceId());   // não se descobrir
+  return remoteClient.startDiscovery({ url: inviteUrl(secret, did, 'client'), token: '', deviceId: did });
+}
+
+// Gera o convite E já vira host: um código de uma sala sem ninguém dentro só
+// gera a frustração de colar e não achar nada do outro lado.
+ipcMain.handle('invite:create', async (_e, opts = {}) => {
+  const relayUrl = inviteRelayUrl();
+  // Reaproveita o segredo por padrão: pedir um código novo não pode derrubar os
+  // aparelhos já pareados. Só `rotate` troca a sala — que é o botão "revogar".
+  const prev = getInviteHost();
+  const reuse = !opts.rotate && prev && prev.secret ? prev.secret : null;
+  let inv;
+  try {
+    inv = invite.create({
+      relayUrl,
+      hostName: require('os').hostname(),
+      ttlMs: Number(opts.ttlMs) > 0 ? Number(opts.ttlMs) : undefined,
+      secret: reuse,
+    });
+  } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+  try { projectStore.setSetting('invite_host', { secret: inv.secret, room: inv.room, relayUrl, createdAt: Date.now() }); } catch {}
+  let running = false; try { running = !!remoteHost.getState().running; } catch {}
+  if (!(reuse && running)) {
+    const r = startHostViaInvite(inv.secret);
+    if (!r || r.ok === false) return { ok: false, error: (r && r.error) || 'host_failed' };
+  }
+  return { ok: true, code: inv.code, url: invite.toUrl(inv.code), room: inv.room, expiresAt: inv.expiresAt, hostName: inv.hostName };
+});
+
+// Estado do convite nas duas pontas — a UI usa pra saber o que mostrar.
+ipcMain.handle('invite:state', async () => {
+  const h = getInviteHost();
+  const c = getInviteClient();
+  let running = false; try { running = !!remoteHost.getState().running; } catch {}
+  return {
+    ok: true,
+    relayUrl: inviteRelayUrl(),
+    host: h ? { room: h.room, createdAt: h.createdAt || null, running } : null,
+    client: c ? { room: c.room, hostName: c.hostName || null, relayUrl: c.relayUrl || null } : null,
+  };
+});
+
+// Encerra a sala desta ponta. Revogar é só apagar o segredo: sem ele ninguém
+// assina prova válida, e o código que circulou por aí vira papel velho.
+ipcMain.handle('invite:revoke', async () => {
+  try { projectStore.setSetting('invite_host', null); } catch {}
+  try { remoteHost.stop(); } catch {}
+  return { ok: true };
+});
+
+function joinInvite(code) {
+  const p = invite.parse(code);
+  if (!p.ok) return { ok: false, error: p.error };
+  const r = startClientViaInvite(p.secret);
+  if (!r || r.ok === false) return { ok: false, error: (r && r.error) || 'connect_failed' };
+  try {
+    projectStore.setSetting('invite_client', { secret: p.secret, room: p.room, relayUrl: p.relayUrl, hostName: p.hostName });
+    projectStore.setSetting('app_mode', 'client');
+  } catch {}
+  return { ok: true, room: p.room, hostName: p.hostName };
+}
+ipcMain.handle('invite:join', async (_e, code) => joinInvite(code));
+
+// Deep link `maestrus://pair?c=…`: é o que faz o QR e o link do convite
+// valerem alguma coisa fora do app. Sem isso o usuário lê o QR no celular e não
+// acontece nada — teria que copiar o código à mão, que é justamente o atrito
+// que o QR existe para remover.
+function handleDeepLink(url) {
+  const u = String(url || '');
+  if (!/^maestrus:\/\/pair/i.test(u)) return;
+  const r = joinInvite(u);
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('invite:joined', r);
+    }
+  } catch {}
+}
+// Um argv pode trazer o link em qualquer posição (o SO decide) — varre tudo.
+function deepLinkFromArgv(argv) {
+  return (argv || []).find((a) => typeof a === 'string' && /^maestrus:\/\//i.test(a)) || null;
+}
+
+ipcMain.handle('invite:leave', async () => {
+  try { projectStore.setSetting('invite_client', null); } catch {}
+  try { remoteClient.disconnect(); } catch {}
+  return { ok: true };
+});
+
+// No boot: reata as duas pontas se houver convite salvo. É o que faz o
+// pareamento sobreviver a fechar o app — sem isso o usuário coleta código de
+// novo toda vez.
+function resumeInvites() {
+  try { const h = getInviteHost(); if (h && h.secret) startHostViaInvite(h.secret); } catch {}
+  try { const c = getInviteClient(); if (c && c.secret) startClientViaInvite(c.secret); } catch {}
+}
 
 // ─── Maestrus remoto: modo CLIENT ───────────────────────────────────────────
 let _clientRefreshTimer = null;

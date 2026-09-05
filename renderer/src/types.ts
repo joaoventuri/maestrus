@@ -496,6 +496,14 @@ declare global {
         devices: () => Promise<{ ok: boolean; devices: Array<{ device_id: string; device_name: string | null; last_seen: string; online: boolean }> }>;
         deviceDelete?: (deviceId: string) => Promise<{ ok: boolean; error?: string }>;
       };
+      invite: {
+        create: (opts?: { ttlMs?: number; rotate?: boolean }) => Promise<{ ok: boolean; code?: string; url?: string; room?: string; expiresAt?: number; hostName?: string | null; error?: string }>;
+        state: () => Promise<{ ok: boolean; relayUrl: string; host: { room: string; createdAt: number | null; running: boolean } | null; client: { room: string; hostName: string | null; relayUrl: string | null } | null }>;
+        revoke: () => Promise<{ ok: boolean }>;
+        join: (code: string) => Promise<{ ok: boolean; room?: string; hostName?: string | null; error?: string }>;
+        leave: () => Promise<{ ok: boolean }>;
+        onJoined: (fn: (r: { ok: boolean; room?: string; hostName?: string | null; error?: string }) => void) => () => void;
+      };
       remote: {
         hostState: () => Promise<RemoteHostState>;
         hostEnable: () => Promise<{ ok: boolean; error?: string }>;

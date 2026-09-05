@@ -12,11 +12,11 @@ No cloud account, no limits, nothing phones home.
 
 <br/>
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows-ff8a3d?style=for-the-badge&logo=windows&logoColor=white)](https://maestrus.cloud/downloads/maestrus-win-0.5.3.exe)
-[![Download for macOS](https://img.shields.io/badge/Download-macOS-ff8a3d?style=for-the-badge&logo=apple&logoColor=white)](https://maestrus.cloud/downloads/maestrus-mac-0.5.3.dmg)
-[![Download for Linux](https://img.shields.io/badge/Download-Linux-ff8a3d?style=for-the-badge&logo=linux&logoColor=white)](https://maestrus.cloud/downloads/Maestrus-0.5.3.AppImage)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows-ff8a3d?style=for-the-badge&logo=windows&logoColor=white)](https://maestrus.cloud/downloads/maestrus-win-0.5.4.exe)
+[![Download for macOS](https://img.shields.io/badge/Download-macOS-ff8a3d?style=for-the-badge&logo=apple&logoColor=white)](https://maestrus.cloud/downloads/maestrus-mac-0.5.4.dmg)
+[![Download for Linux](https://img.shields.io/badge/Download-Linux-ff8a3d?style=for-the-badge&logo=linux&logoColor=white)](https://maestrus.cloud/downloads/Maestrus-0.5.4.AppImage)
 
-<sub>Latest **v0.5.3** · [all releases](https://github.com/joaoventuri/maestrus/releases) · Apache-2.0 · no telemetry</sub>
+<sub>Latest **v0.5.4** · [all releases](https://github.com/joaoventuri/maestrus/releases) · Apache-2.0 · no telemetry</sub>
 
 <br/>
 
@@ -131,6 +131,13 @@ flowchart LR
 Close the laptop and the host keeps working. Open your **phone** later, connect
 the same way, and the conversation is right where you left it.
 
+**No account needed.** On the host, open *Remote Access → Pair without an
+account*, hit **Generate invite**, and read the QR (or paste the code) on the
+other device. The invite carries the relay address and a secret the two machines
+share; the room is `sha256(secret)` and each side proves possession with an HMAC,
+so the relay forwards traffic without ever learning the secret — or who you are.
+Invites expire, and rotating the secret closes the room.
+
 <br/>
 
 ---
@@ -216,9 +223,9 @@ to configure.
 
 | | Platform | Get it | Notes |
 |---|---|---|---|
-| <img src="https://cdn.simpleicons.org/windowsxp/ff8a3d" width="18"/> | **Windows** | [`maestrus-win-0.5.3.exe`](https://maestrus.cloud/downloads/maestrus-win-0.5.3.exe) | Installer · auto-updates |
-| <img src="https://cdn.simpleicons.org/apple/ff8a3d" width="18"/> | **macOS** (Apple Silicon) | [`maestrus-mac-0.5.3.dmg`](https://maestrus.cloud/downloads/maestrus-mac-0.5.3.dmg) | Installer · auto-updates |
-| <img src="https://cdn.simpleicons.org/linux/ff8a3d" width="18"/> | **Linux** | [`Maestrus-0.5.3.AppImage`](https://maestrus.cloud/downloads/Maestrus-0.5.3.AppImage) | Portable · `chmod +x` and run |
+| <img src="https://cdn.simpleicons.org/windowsxp/ff8a3d" width="18"/> | **Windows** | [`maestrus-win-0.5.4.exe`](https://maestrus.cloud/downloads/maestrus-win-0.5.4.exe) | Installer · auto-updates |
+| <img src="https://cdn.simpleicons.org/apple/ff8a3d" width="18"/> | **macOS** (Apple Silicon) | [`maestrus-mac-0.5.4.dmg`](https://maestrus.cloud/downloads/maestrus-mac-0.5.4.dmg) | Installer · auto-updates |
+| <img src="https://cdn.simpleicons.org/linux/ff8a3d" width="18"/> | **Linux** | [`Maestrus-0.5.4.AppImage`](https://maestrus.cloud/downloads/Maestrus-0.5.4.AppImage) | Portable · `chmod +x` and run |
 
 > **Node, Git and the Claude CLI ship inside the installer.** No setup steps, no
 > internet needed at install time.

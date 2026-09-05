@@ -3,6 +3,8 @@
 // Caso de uso mobile = REMOTO: loga na cloud, conecta num host e opera o CLI
 // dele. Tudo o que não se aplica no mobile vira no-op seguro.
 
+import { parseInvite, inviteConnectUrl } from './invite-web';
+
 const API_BASE = 'https://maestrus.cloud/api.php';
 // SELF-HOST: quando o web é servido pelo próprio maestrus-server (não pelo
 // maestrus.cloud), tudo passa pela MESMA origem — inclusive o relay (proxy
@@ -401,12 +403,14 @@ async function verifyHostAlive(timeoutMs: number): Promise<boolean> {
 }
 
 // Cria o link do client pro host atual (hostId/hostName já setados).
-function startClientLink(url: string, token: string) {
+function startClientLink(url: string, token: string, viaInvite = false) {
   link = new WebRelayLink({
     url, token, deviceId: deviceId(), hostId,
     // Renova o relay_token (TTL 5min) a cada reconexão — cura o "deslogado"
     // após background longo. Mesmo padrão já usado no host (relay/link.js).
-    refreshTokenFn: freshClientToken,
+    // No convite não há token pra renovar: a autorização é a prova de posse do
+    // segredo, que já vai na URL e não expira.
+    refreshTokenFn: viaInvite ? undefined : freshClientToken,
     // O estado de conexão segue o WS DO CLIENTE (relay alcançável), não a
     // presença do host — senão um blip do host (renovação de token) deixava
     // "Disconnected" pra sempre mesmo respondendo.
@@ -727,6 +731,51 @@ async function doResume(): Promise<any> {
 
 // Descobre uma MÁQUINA online da conta (host não-cloud) e conecta nela, sem
 // código de pareamento. Extraído pra ser reusado como fallback do resume.
+// ─── Pareamento por CONVITE (sem conta) ─────────────────────────────────────
+// A criptografia e o parse moram em invite-web.ts (espelho de electron/invite.js,
+// testado contra ele). Aqui fica só o que é de conexão.
+const LS_INVITE = 'maestrus_invite';
+
+function savedInvite(): any { try { return JSON.parse(localStorage.getItem(LS_INVITE) || 'null'); } catch { return null; } }
+
+// Entra na sala e gruda no primeiro host que responder. Sem `hostId` os RPCs
+// não teriam pra onde ir — por isso listamos os hosts antes de dar ok.
+async function connectInvite(relayUrl: string, secret: string, name: string | null): Promise<any> {
+  try { link?.close(); } catch {}
+  hostId = null; hostName = name; cachedProjects = [];
+  startClientLink(await inviteConnectUrl(relayUrl, secret, deviceId(), 'client'), '', true);
+  const d = Date.now() + 8000;
+  while (Date.now() < d && !clientState.connected) await new Promise((r) => setTimeout(r, 200));
+  if (!clientState.connected) return { ok: false, error: 'relay_unreachable' };
+  let hosts: any[] = [];
+  try { hosts = link ? await link.hostList(5000) : []; } catch {}
+  const h = (Array.isArray(hosts) ? hosts : [])[0];
+  const did = h && (h.deviceId || h.id || h.device_id);
+  if (!did) return { ok: false, error: 'host_offline' };
+  hostId = did; hostName = h.name || name || 'Host';
+  if (link) link.hostId = did;
+  emitClientState();
+  await refreshProjects().catch(() => {});
+  emitProjectsChanged();
+  return { ok: true, hostName };
+}
+
+async function joinInvite(code: string): Promise<any> {
+  const p = parseInvite(code);
+  if (!p.ok) return { ok: false, error: p.error };
+  const r = await connectInvite(p.relayUrl, p.secret, p.hostName);
+  // Só persiste convite que FUNCIONOU: guardar um que não conecta faria o app
+  // insistir nele em todo boot e nunca cair no caminho da conta.
+  if (r.ok) { try { localStorage.setItem(LS_INVITE, JSON.stringify({ relayUrl: p.relayUrl, secret: p.secret, hostName: r.hostName, ts: Date.now() })); } catch {} }
+  return r;
+}
+
+async function resumeInvite(): Promise<any> {
+  const inv = savedInvite();
+  if (!inv || !inv.secret || !inv.relayUrl) return { ok: false, error: 'no_invite' };
+  return connectInvite(inv.relayUrl, inv.secret, inv.hostName || null);
+}
+
 async function doDiscover(): Promise<any> {
   const a = getAccount(); if (!a) return { ok: false, error: 'not_logged_in' };
   // já atachado a uma máquina viva? nada a fazer.
@@ -825,6 +874,12 @@ async function preferMachine(): Promise<any> {
 // pareamento salvo e, se o host salvo não responder a tempo, cai pra discovery.
 // Sem pareamento salvo → não força nada (a UI mostra a tela de conexão).
 async function ensureConnected(): Promise<any> {
+  // Convite salvo vem primeiro: quem pareou assim pode não ter conta nenhuma,
+  // e mesmo tendo, a sala que ele escolheu não pode ser trocada por discovery.
+  if (savedInvite()) {
+    const r = await resumeInvite();
+    if (r.ok) return { ok: true, via: 'invite' };
+  }
   const a = getAccount(); if (!a) return { ok: false };
   const saved = loadSavedRemote();
   // Sem pareamento salvo → tenta discovery direto (pega máquina online OU o
@@ -1092,9 +1147,38 @@ export function installMaestrusWeb() {
         return api('push_unsubscribe', { license_key: a.licenseKey, endpoint });
       },
     },
+    // Convite: no web só existe o lado CLIENT — o navegador não roda CLI, então
+    // não há host pra abrir sala.
+    invite: {
+      create: async () => ({ ok: false, error: 'desktop_only' }),
+      state: async () => { const i = savedInvite(); return { ok: true, relayUrl: i?.relayUrl || '', host: null, client: i ? { room: '', hostName: i.hostName || null, relayUrl: i.relayUrl } : null }; },
+      revoke: async () => ({ ok: true }),
+      join: async (code: string) => joinInvite(code),
+      leave: async () => {
+        try { localStorage.removeItem(LS_INVITE); } catch {}
+        try { link?.close(); } catch {}
+        link = null; hostId = null; cachedProjects = [];
+        clientState = { connected: false, status: 'idle', hostName: null }; emitClientState();
+        return { ok: true };
+      },
+      onJoined: (_fn: any) => () => {},
+    },
     remote: {
       clientState: async () => ({ ...clientState }),
+      // Entrar numa sala por convite (sem conta).
+      joinInvite: async (code: string) => joinInvite(code),
+      inviteState: async () => { const i = savedInvite(); return { ok: true, client: i ? { hostName: i.hostName || null, relayUrl: i.relayUrl } : null }; },
+      leaveInvite: async () => {
+        try { localStorage.removeItem(LS_INVITE); } catch {}
+        try { link?.close(); } catch {}
+        link = null; hostId = null; cachedProjects = [];
+        clientState = { connected: false, status: 'idle', hostName: null }; emitClientState();
+        return { ok: true };
+      },
       connect: async (code: string) => {
+        // O mesmo campo aceita o código de conta (8 chars) e o convite: pra
+        // quem cola, os dois são "o código que apareceu na outra tela".
+        if (parseInvite(code).ok) return joinInvite(code);
         const a = getAccount(); if (!a) return { ok: false, error: 'not_logged_in' };
         const pr = await api('pair_redeem', { license_key: a.licenseKey, device_id: deviceId(), code });
         if (!pr.ok || !pr.host_device_id) return { ok: false, error: pr.error || 'pair_failed' };
