@@ -645,7 +645,8 @@
     "noMachines": "Ninguna máquina en línea en esta cuenta ahora. Enciende una máquina (con Maestrus abierto y el modo host activo) y busca de nuevo — o conéctate con un código.",
     "searchAgain": "Buscar mis máquinas de nuevo",
     "notifDone": "Respuesta lista",
-    "notifAsk": "El agente hizo una pregunta"
+    "notifAsk": "El agente hizo una pregunta",
+    "haveInvite": "Tengo una invitación de otra máquina"
   },
   "auth": {
     "tagline": "Inicio de sesión en Claude requerido",

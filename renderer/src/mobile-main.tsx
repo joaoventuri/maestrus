@@ -22,8 +22,14 @@ if (DEBUG) {
 }
 
 function syncAppHeight() {
-  const h = Math.round((window.visualViewport?.height ?? window.innerHeight));
+  const vv0 = window.visualViewport;
+  const h = Math.round((vv0?.height ?? window.innerHeight));
   document.documentElement.style.setProperty('--app-height', h + 'px');
+  // OFFSET do visual viewport: quando o teclado abre, o iOS EMPURRA o layout
+  // viewport pra cima — o .m-screen (fixed, top:0) ia junto, o conteúdo sumia
+  // "lá em cima" e ficava um bloco preto entre o teclado e a tela (o fundo do
+  // body). Seguir o offsetTop cola o app na área realmente visível.
+  document.documentElement.style.setProperty('--app-top', Math.round(vv0?.offsetTop ?? 0) + 'px');
   if (dbg) {
     const vv = window.visualViewport;
     const sc = document.querySelector('.m-screen') as HTMLElement | null;

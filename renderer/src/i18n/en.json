@@ -645,7 +645,8 @@
     "noMachines": "No machine online on this account right now. Turn on a machine (with Maestrus open and host mode on) and search again — or connect with a code.",
     "searchAgain": "Search my machines again",
     "notifDone": "Response ready",
-    "notifAsk": "The agent asked a question"
+    "notifAsk": "The agent asked a question",
+    "haveInvite": "I have an invite from another machine"
   },
   "auth": {
     "tagline": "Claude account required",

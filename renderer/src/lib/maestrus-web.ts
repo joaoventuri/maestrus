@@ -773,6 +773,9 @@ async function joinInvite(code: string): Promise<any> {
 async function resumeInvite(): Promise<any> {
   const inv = savedInvite();
   if (!inv || !inv.secret || !inv.relayUrl) return { ok: false, error: 'no_invite' };
+  // Sala já viva → não derruba pra "reconectar": connectInvite fecha o link, e
+  // fechar um link saudável a cada wake era metade do pisca conecta/desconecta.
+  if (link && link.isOpen() && clientState.connected && hostId) return { ok: true, already: true };
   return connectInvite(inv.relayUrl, inv.secret, inv.hostName || null);
 }
 
@@ -873,7 +876,19 @@ async function preferMachine(): Promise<any> {
 // Fluxo unificado de conexão (usado no boot e ao voltar do background): tenta o
 // pareamento salvo e, se o host salvo não responder a tempo, cai pra discovery.
 // Sem pareamento salvo → não força nada (a UI mostra a tela de conexão).
+//
+// SINGLE-FLIGHT: o boot do MobileApp e o pageshow do lifecycle disparavam DOIS
+// ensureConnected em paralelo — e cada um começa fechando o link do outro
+// (connectInvite/doConnectHost fazem link.close()). O usuário via
+// conectado→desconectado→conectando em loop e "resolvia" matando o app.
+// Concorrentes agora COMPARTILHAM a mesma tentativa em vez de se atropelar.
+let _connectFlight: Promise<any> | null = null;
 async function ensureConnected(): Promise<any> {
+  if (_connectFlight) return _connectFlight;
+  _connectFlight = ensureConnectedInner().finally(() => { _connectFlight = null; });
+  return _connectFlight;
+}
+async function ensureConnectedInner(): Promise<any> {
   // Convite salvo vem primeiro: quem pareou assim pode não ter conta nenhuma,
   // e mesmo tendo, a sala que ele escolheu não pode ser trocada por discovery.
   if (savedInvite()) {
@@ -900,7 +915,10 @@ async function ensureConnected(): Promise<any> {
 let _ensuring = false;
 async function ensureAlive(): Promise<void> {
   if (_ensuring) return;
-  if (!getAccount()) return;
+  // Convite salvo também conta: quem pareou sem conta ficava SEM recuperação
+  // nenhuma ao voltar do background — o socket morria e só matar o app trazia
+  // a conexão de volta.
+  if (!getAccount() && !savedInvite()) return;
   _ensuring = true;
   try {
     if (link && !link.closed) {

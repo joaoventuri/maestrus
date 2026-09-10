@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#141414" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -46,8 +46,16 @@
               // o bundle referenciado pelo HTML NO SERVIDOR com o que esta
               // rodando; se mudou, recarrega uma vez.
               var checking = false;
+              var lastCheck = 0;
               function checkBuild() {
                 if (checking || document.visibilityState !== 'visible') return;
+                // No maximo 1 checagem a cada 10min: rodava em TODA troca de
+                // aba (visibility+focus), com fetch no-store + reg.update() —
+                // era o "travadinha ao voltar", e um reload no meio de uma
+                // conversa ao vivo. Voltar pro app tem que ser instantaneo;
+                // update de bundle pode esperar.
+                if (Date.now() - lastCheck < 10 * 60 * 1000) return;
+                lastCheck = Date.now();
                 checking = true;
                 reg.update().catch(function () {});
                 fetch('/app/index.html', { cache: 'no-store' })
@@ -65,7 +73,6 @@
                   .then(function () { checking = false; });
               }
               document.addEventListener('visibilitychange', checkBuild);
-              window.addEventListener('focus', checkBuild);
               checkBuild();
             })
             .catch(err => console.warn('[maestrus] SW register failed:', err));

@@ -87,6 +87,10 @@ export default function MobileApp() {
   // disconnect/logout explícito.
   const everConnectedRef = useRef(false);
   useEffect(() => { if (client.connected) everConnectedRef.current = true; }, [client.connected]);
+  // Pareado por CONVITE (sem conta) — dispensa o Login. E "quero colar um
+  // convite": deixa quem NÃO tem conta chegar na tela de conexão.
+  const [inviteJoined, setInviteJoined] = useState(false);
+  const [wantInvite, setWantInvite] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -95,8 +99,12 @@ export default function MobileApp() {
       // redirecionou pro /app) → entra logado, sem pedir login de novo.
       if (!a) { try { const s = await M().cloud.sessionLogin?.(); if (s && s.ok && s.account) a = s.account; } catch {} }
       setAccount(a); setBooted(true);
+      // Convite salvo = credencial válida SEM conta: conecta e não exige login.
+      let inv: any = null;
+      try { inv = await (M() as any).invite?.state?.(); } catch {}
+      if (inv?.client) setInviteJoined(true);
       // Mesmo init flow do cold start: pareamento salvo (15d) + fallback discovery.
-      if (a) {
+      if (a || inv?.client) {
         const r = M().remote.ensureConnected || M().remote.resume;
         r?.().catch(() => {});
       }
@@ -137,11 +145,20 @@ export default function MobileApp() {
   const attempting = client.status === 'connecting' || client.status === 'starting';
   // Queda transitória depois de já ter conectado → mantém a tela atual e sobe um
   // overlay "reconectando" (o ensureAlive/scheduleReconnect cuida da volta).
-  const reconnecting = everConnectedRef.current && !client.connected;
+  const reconnectingNow = everConnectedRef.current && !client.connected;
+  // Debounce do aviso: blip transitório (troca de aba, wake do rádio) se
+  // resolve sozinho em ~1s — subir o overlay na hora era o "pisca
+  // conectado/desconectado" que fazia o app parecer instável.
+  const [reconnecting, setReconnecting] = useState(false);
+  useEffect(() => {
+    if (!reconnectingNow) { setReconnecting(false); return; }
+    const id = setTimeout(() => setReconnecting(true), 1400);
+    return () => clearTimeout(id);
+  }, [reconnectingNow]);
 
   let screen;
   if (!booted) screen = <div className="m-center"><div className="m-spin" /></div>;
-  else if (!account) screen = <Login t={t} onDone={setAccount} />;
+  else if (!account && !inviteJoined && !wantInvite && !client.connected) screen = <Login t={t} onDone={setAccount} onInvite={() => setWantInvite(true)} />;
   else if (!client.connected && !everConnectedRef.current && attempting) screen = <div className="m-center"><div className="m-spin" /></div>;
   else if (!client.connected && !everConnectedRef.current) screen = <Connect t={t} onAccount={() => setShowAccount(true)} onLogout={logout} />;
   else if (showKanban) screen = <MobileKanban onBack={() => setShowKanban(false)} projects={projects} />;
@@ -334,7 +351,7 @@ function Account({ t, onClose, onLogout }: any) {
   );
 }
 
-function Login({ t, onDone }: any) {
+function Login({ t, onDone, onInvite }: any) {
   const [email, setEmail] = useState(''); const [pass, setPass] = useState('');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
   async function submit(e: React.FormEvent) {
@@ -357,6 +374,9 @@ function Login({ t, onDone }: any) {
       <button className="m-link" onClick={() => window.open('https://maestrus.cloud/register.php', '_blank')}>
         {t('mobile.noAccount')} <u>{t('mobile.createAccount')}</u>
       </button>
+      {onInvite && (
+        <button className="m-link" onClick={onInvite}><u>{t('mobile.haveInvite')}</u></button>
+      )}
     </div>
   );
 }

@@ -12,6 +12,7 @@
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 ::selection { background: var(--accent-soft); color: var(--text); }
 html, body, #root { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
+html, body { height: 100%; overflow: hidden; }
 body { background: var(--bg); color: var(--text); font-family: var(--sans); overscroll-behavior: none; }
 button, input, textarea { font-family: inherit; }
 
@@ -46,7 +47,7 @@ button, input, textarea { font-family: inherit; }
    100dvh media maior que a tela quando a barra do Safari aparecia → input ia
    pro fundo e sobrava preto). Assim a tela nunca é mais alta que o viewport e
    nada rola por fora da área de mensagens. */
-.m-screen { position: fixed; top: 0; left: 0; right: 0; height: var(--app-height, 100dvh); display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); overflow: hidden; }
+.m-screen { position: fixed; top: var(--app-top, 0px); left: 0; right: 0; height: var(--app-height, 100dvh); display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); overflow: hidden; }
 .m-auth { align-items: center; justify-content: center; gap: 6px; padding: 24px; }
 .m-auth h1 { margin: 4px 0 0; font-size: 26px; font-weight: 700; }
 .m-sub { color: var(--dim); margin: 8px 0 18px; }
@@ -78,7 +79,7 @@ button, input, textarea { font-family: inherit; }
    também é flex-column tem bug de toque no centro (só rolava na lateral). Block
    + touch-action:pan-y rola liso em qualquer ponto. Alinhamento das bolhas por
    margem (align-self não existe fora do flex). */
-.m-chat .m-msgs { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; display: block; padding: 16px 14px; }
+.m-chat .m-msgs { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; display: block; padding: 16px 14px; }
 .m-chat .m-msgs > * { margin-bottom: 14px; }
 .m-chat .m-msgs > *:last-child { margin-bottom: 0; }
 .m-bubble { max-width: 86%; padding: 11px 14px; border-radius: 16px; font-size: 15.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
@@ -272,7 +273,12 @@ button, input, textarea { font-family: inherit; }
 .m-install-x { flex-shrink: 0; background: none; border: none; color: var(--faint); padding: 4px; cursor: pointer; display: flex; }
 
 /* thinking bubble */
-.m-bubble.thinking { align-self: flex-start; background: transparent; color: var(--faint); font-style: italic; font-size: 13px; padding: 2px 6px; }
+/* Clamp: com o thinking streamado, o histórico traz blocos ENORMES — sem o
+   corte a conversa virava paredes de itálico e "quebrava o visual". O fade
+   diz que há mais sem ocupar a tela. */
+.m-bubble.thinking { align-self: flex-start; background: transparent; color: var(--faint); font-style: italic; font-size: 13px; padding: 2px 6px;
+  max-height: 66px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 55%, transparent); mask-image: linear-gradient(#000 55%, transparent); }
 
 /* markdown dentro do assistant */
 .m-bubble.assistant p { margin: 0 0 8px; }

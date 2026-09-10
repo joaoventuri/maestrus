@@ -1114,8 +1114,7 @@ html, body, #root {
 .thinking-body {
   white-space: pre-wrap;
   font-style: italic;
-  opacity: 0.85;
-}
+  opacity: 0.85;; max-height: 220px; overflow-y: auto; }
 
 .msg.system {
   background: rgba(150, 150, 150, 0.05);
