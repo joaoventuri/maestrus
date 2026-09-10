@@ -128,7 +128,7 @@ function createDraft(input) {
     codeDir: null,
     driveDir: null,
     sessionDir: null,
-    model: input.model || 'sonnet',
+    model: input.model || 'opus',
     thinkingMode: input.thinkingMode || 'medium',
     permissionMode: input.permissionMode || 'bypassPermissions',
     engine: input.engine || 'claude', // 'claude' (CLI local) | 'cloud' (Maestrus Cloud AI)
@@ -272,7 +272,7 @@ function ensureMaestrus(workspaceDir) {
     codeDir: workspaceDir,
     driveDir: null,
     sessionDir: null,
-    model: 'claude-opus-4-7[1m]',
+    model: 'opus[1m]',
     thinkingMode: 'high',
     permissionMode: 'bypassPermissions',
     isPinned: true,

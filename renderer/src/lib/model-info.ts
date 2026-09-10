@@ -38,6 +38,8 @@ export function costTier(id: ModelChoice | undefined): CostTier {
 // depois os atalhos "(último)" que deixam o CLI escolher a versão atual. O "(1M)"
 // no nome distingue a janela de 1M — sem badge separado (a descrição detalha).
 export const MODEL_REGISTRY: ModelInfo[] = [
+  { id: 'claude-fable-5-1',       label: 'Fable 5.1',         family: 'fable',  provider: 'anthropic', descKey: 'model.descFable51',      contextWindow: 200_000 },
+  { id: 'claude-fable-5-1[1m]',   label: 'Fable 5.1 (1M)',    family: 'fable',  provider: 'anthropic', descKey: 'model.descFable51_1m',   contextWindow: 1_000_000 },
   { id: 'claude-fable-5',         label: 'Fable 5',           family: 'fable',  provider: 'anthropic', descKey: 'model.descFable5',       contextWindow: 200_000 },
   { id: 'claude-fable-5[1m]',     label: 'Fable 5 (1M)',      family: 'fable',  provider: 'anthropic', descKey: 'model.descFable5_1m',    contextWindow: 1_000_000 },
   { id: 'claude-opus-5',          label: 'Opus 5',            family: 'opus',   provider: 'anthropic', descKey: 'model.descOpus5',        contextWindow: 200_000 },
@@ -48,7 +50,9 @@ export const MODEL_REGISTRY: ModelInfo[] = [
   { id: 'claude-sonnet-5[1m]',    label: 'Sonnet 5 (1M)',     family: 'sonnet', provider: 'anthropic', descKey: 'model.descSonnet5_1m',   contextWindow: 1_000_000 },
   { id: 'claude-sonnet-4-6',      label: 'Sonnet 4.6',        family: 'sonnet', provider: 'anthropic', descKey: 'model.descSonnetLatest', contextWindow: 200_000 },
   { id: 'claude-haiku-4-5',       label: 'Haiku 4.5',         family: 'haiku',  provider: 'anthropic', descKey: 'model.descHaikuLatest',  contextWindow: 200_000 },
-  // Atalhos — o CLI resolve pra versão mais recente da família.
+  // Atalhos — o CLI resolve pra versão mais recente da família. São os únicos
+  // ids que se ATUALIZAM SOZINHOS: sai um modelo novo, o alias já aponta pra ele.
+  { id: 'fable',                  label: 'Fable (último)',    family: 'fable',  provider: 'anthropic', descKey: 'model.descFableAlias',   contextWindow: 200_000 },
   { id: 'opus',                   label: 'Opus (último)',     family: 'opus',   provider: 'anthropic', descKey: 'model.descOpus',         contextWindow: 200_000 },
   { id: 'sonnet',                 label: 'Sonnet (último)',   family: 'sonnet', provider: 'anthropic', descKey: 'model.descSonnet',       contextWindow: 200_000 },
   { id: 'haiku',                  label: 'Haiku (último)',    family: 'haiku',  provider: 'anthropic', descKey: 'model.descHaiku',        contextWindow: 200_000 },
@@ -65,15 +69,73 @@ export function engineProvider(engine: string | undefined): 'anthropic' | 'opena
   return (engine === 'codex' || engine === 'codex-api') ? 'openai' : 'anthropic';
 }
 
+// ─── Modelos descobertos no binário do CLI ──────────────────────────────────
+// O CLI instalado carrega a lista de modelos que conhece; o main extrai os ids
+// (electron/model-scan.js) e o App injeta aqui no boot. Assim, CLI atualizado =
+// picker atualizado, sem esperar release do Maestrus. O registro curado acima
+// continua mandando em label/descrição — só entra aqui o que ele não conhece.
+let _discovered: ModelInfo[] = [];
+// [major, minor] de um id claude-<fam>-X(-Y). Alias e formatos estranhos → null.
+function versionOf(id: string): [number, number] | null {
+  const m = id.match(/^claude-(?:fable|opus|sonnet|haiku)-(\d+)(?:-(\d+))?(?:\[1m\])?$/);
+  return m ? [Number(m[1]), Number(m[2] || 0)] : null;
+}
+export function setDiscoveredModels(ids: string[]) {
+  const known = new Set(MODEL_REGISTRY.map((m) => m.id));
+  // Só entra o que for MAIS NOVO que o registro curado da mesma família — a
+  // descoberta existe pra pegar lançamento, não pra despejar o catálogo antigo
+  // inteiro (opus-4-0, 4-1… viraria um menu de museu).
+  const maxCurated: Record<string, [number, number]> = {};
+  for (const m of MODEL_REGISTRY) {
+    const v = versionOf(m.id);
+    if (!v) continue;
+    const cur = maxCurated[m.family];
+    if (!cur || v[0] > cur[0] || (v[0] === cur[0] && v[1] > cur[1])) maxCurated[m.family] = v;
+  }
+  _discovered = (ids || [])
+    .filter((id) => {
+      if (!/^claude-(fable|opus|sonnet|haiku)-\d+(-\d+)?$/.test(id) || known.has(id)) return false;
+      const fam = id.match(/^claude-(\w+)-/)![1];
+      const v = versionOf(id)!;
+      const top = maxCurated[fam];
+      return !top || v[0] > top[0] || (v[0] === top[0] && v[1] > top[1]);
+    })
+    .map((id) => {
+      const fam = (id.match(/^claude-(\w+)-/)?.[1] || 'sonnet') as ModelInfo['family'];
+      // claude-opus-5-1 → "Opus 5.1"
+      const ver = id.replace(/^claude-\w+-/, '').replace(/-/g, '.');
+      return {
+        id,
+        label: `${fam[0].toUpperCase()}${fam.slice(1)} ${ver}`,
+        family: fam,
+        provider: 'anthropic' as const,
+        descKey: 'model.descDiscovered',
+        contextWindow: 200_000,
+      };
+    });
+}
+
 /** Modelos que fazem sentido para a engine escolhida (filtra por provedor). */
 export function modelsForEngine(engine: string | undefined): ModelInfo[] {
   const p = engineProvider(engine);
-  return MODEL_REGISTRY.filter((m) => m.provider === p);
+  const base = MODEL_REGISTRY.filter((m) => m.provider === p);
+  if (p !== 'anthropic' || _discovered.length === 0) return base;
+  // Descoberto entra logo após o último pinado da mesma família — a ordem
+  // visual (Fable, Opus, Sonnet, Haiku, atalhos) se mantém.
+  const out = [...base];
+  for (const d of _discovered) {
+    let at = -1;
+    for (let i = 0; i < out.length; i++) if (out[i].family === d.family && !/^(fable|opus|sonnet|haiku|default)$/.test(out[i].id)) at = i;
+    out.splice(at >= 0 ? at + 1 : out.length, 0, d);
+  }
+  return out;
 }
 
 /** Modelo default por engine (usado quando o projeto ainda não escolheu um). */
+// Anthropic default = alias 'opus' (não um id pinado): acompanha sozinho o
+// último Opus quando a Anthropic lança versão nova.
 export function defaultModelForEngine(engine: string | undefined): ModelChoice {
-  return engineProvider(engine) === 'openai' ? 'gpt-5-codex' : 'sonnet';
+  return engineProvider(engine) === 'openai' ? 'gpt-5-codex' : 'opus';
 }
 
 // Reserva de OUTPUT que o Claude Code desconta da janela visível. É o teto de

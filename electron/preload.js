@@ -362,6 +362,9 @@ contextBridge.exposeInMainWorld('maestrus', {
       return () => ipcRenderer.removeListener('invite:joined', h);
     },
   },
+  models: {
+    discovered: () => ipcRenderer.invoke('models:discovered'),
+  },
   remote: {
     hostState: () => ipcRenderer.invoke('remote:hostState'),
     hostEnable: () => ipcRenderer.invoke('remote:hostEnable'),

@@ -16,6 +16,7 @@ import Logo from './components/Logo';
 import UpdateBanner from './components/UpdateBanner';
 import TitleBar from './components/TitleBar';
 import Splash from './components/Splash';
+import { setDiscoveredModels } from './lib/model-info';
 import { useT } from './lib/i18n';
 import { noteEvent, setActiveProject, staleWorking, reconcile } from './lib/activity-store';
 
@@ -93,6 +94,13 @@ export default function App() {
   // lights) no topo da sidebar — senão eles ficam por cima do logo.
   useEffect(() => {
     try { if ((window as any).maestrus?.platform === 'darwin') document.documentElement.classList.add('is-mac'); } catch {}
+    // Modelos que o CLI instalado conhece: alimenta o picker com lançamentos
+    // que o registro curado ainda não tem (fonte: o próprio binário do CLI).
+    try {
+      (window as any).maestrus?.models?.discovered?.().then((ids: string[]) => {
+        if (Array.isArray(ids) && ids.length) setDiscoveredModels(ids);
+      }).catch(() => {});
+    } catch {}
   }, []);
 
   useEffect(() => {

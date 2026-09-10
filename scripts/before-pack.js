@@ -28,7 +28,7 @@ const VENDOR = path.join(ROOT, 'vendor', 'runtime');
 // Versão FIXA do Claude Code embutido. Trocar aqui é decisão consciente (e o
 // auto-bump do CI atualiza esta linha). Nunca voltar pra @latest: o CLI publica
 // quase diariamente e a gente parseia o contrato do stream-json dele.
-const CLAUDE_CLI_VERSION = process.env.MAESTRUS_CLAUDE_CLI_VERSION || '2.1.228';
+const CLAUDE_CLI_VERSION = process.env.MAESTRUS_CLAUDE_CLI_VERSION || '2.1.267';
 
 function log(...a) { console.log('[before-pack]', ...a); }
 

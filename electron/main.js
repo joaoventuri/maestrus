@@ -847,6 +847,13 @@ ipcMain.handle('requirements:install', async (_e, { id }) => {
   }
 });
 ipcMain.handle('app:config', async () => ({ base: require('./config').BASE, hostId: claudePty.currentHostId() }));
+// Modelos que o CLI instalado conhece (extraídos do binário, com cache por
+// versão do arquivo). O picker mescla com o registro curado — CLI atualizado
+// = modelos novos aparecem sem release do Maestrus.
+ipcMain.handle('models:discovered', async () => {
+  try { return require('./model-scan').discover(claudePty.findClaudeBin()); }
+  catch { return []; }
+});
 // Modo do app: 'server' (tudo local, pode hospedar clientes) | 'client'
 // (espelha um host pelo relay). null = ainda não escolhido (mostra o picker).
 

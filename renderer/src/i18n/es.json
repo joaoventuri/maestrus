@@ -284,7 +284,11 @@
     "descSonnet5": "Claude Sonnet 5 — el mejor equilibrio de velocidad e inteligencia (200K).",
     "descSonnet5_1m": "Claude Sonnet 5 con la ventana extendida de 1M tokens.",
     "switchFailed": "No pude aplicar el cambio en el servidor (¿host desconectado?). Se aplica al reconectar.",
-    "descFable5_1m": "Claude Fable 5 con ventana de 1M tokens — el más capaz de Anthropic para contexto enorme."
+    "descFable5_1m": "Claude Fable 5 con ventana de 1M tokens — el más capaz de Anthropic para contexto enorme.",
+    "descFable51": "Claude Fable 5.1 — el tope de línea actual. El mejor en código y tareas largas; caché 75% más barata que Fable 5.",
+    "descFable51_1m": "Claude Fable 5.1 con ventana de 1M tokens — contexto gigante en el modelo más capaz.",
+    "descFableAlias": "Siempre el Fable más reciente — se actualiza solo cuando sale una versión nueva",
+    "descDiscovered": "Detectado en tu Claude CLI (más nuevo que la lista de la app)"
   },
   "linkPreview": {
     "agentBusy": "Maestrus navegando…",
