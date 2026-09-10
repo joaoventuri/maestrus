@@ -392,6 +392,18 @@ function warmClaudeBin() {
 function findClaudeBin() {
   if (_cachedBin) return _cachedBin;
 
+  // -1) Cópia ATUALIZADA em userData (claude-cli-updater), só quando mais nova
+  //     que a embutida. É o que destrava "version X or newer is required" sem
+  //     reinstalar o Maestrus — o instalador congela o CLI, o updater não.
+  try {
+    const updated = require('./claude-cli-updater').updatedBinIfNewer();
+    if (updated && binWorks(updated)) {
+      _cachedBin = updated;
+      console.log(`[maestrus] claude binary (atualizado): ${_cachedBin}`);
+      return _cachedBin;
+    }
+  } catch {}
+
   // 0) Binário EMBUTIDO no instalador do Maestrus — prioridade máxima (o usuário
   //    leigo não instalou nada à parte; o Claude veio junto). MAS só se ele de
   //    fato roda — no Windows um exe de arch errada dá `spawn UNKNOWN`.

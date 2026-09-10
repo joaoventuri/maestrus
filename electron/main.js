@@ -697,6 +697,25 @@ app.whenReady().then(async () => {
   // Resolve o binário do Claude JÁ no boot (fora do turno) pra a 1ª mensagem não
   // congelar a UI com o spawnSync de verificação — sobretudo no Windows.
   try { claudePty.warmClaudeBin(); } catch {}
+  // CLI embutido se ATUALIZA sozinho (background): o instalador congela a
+  // versão de build e o update rápido não toca no runtime — sem isto, todo
+  // modelo novo termina em "version X or newer is required" até o usuário
+  // baixar um instalador inteiro. Ao atualizar, invalida o cache do binário:
+  // o PRÓXIMO turno já sai na versão nova, sem reiniciar.
+  const claudeCliUpdater = require('./claude-cli-updater');
+  const cliUpdated = () => { try { claudePty.resetClaudeBin(); claudePty.warmClaudeBin(); } catch {} };
+  setTimeout(() => { claudeCliUpdater.ensureLatest({ onUpdated: cliUpdated }).catch(() => {}); }, 15000);
+  setInterval(() => { claudeCliUpdater.ensureLatest({ onUpdated: cliUpdated }).catch(() => {}); }, 12 * 60 * 60 * 1000).unref?.();
+  // Gatilho reativo: a API acabou de recusar por CLI velho → atualiza JÁ, não
+  // no próximo ciclo de 12h. O retry é do usuário; o destravamento é nosso.
+  claudePty.onEvent((p) => {
+    try {
+      const txt = (p && (p.text || (p.evt && p.evt.result))) || '';
+      if (typeof txt === 'string' && /does not support this model.*version [\d.]+ or newer/i.test(txt)) {
+        claudeCliUpdater.ensureLatest({ onUpdated: cliUpdated }).catch(() => {});
+      }
+    } catch {}
+  });
   // Onboarding OCULTO do Codex: se o binário não estiver presente, baixa o mais
   // recente em background (dir gravável do app, sem -g). Best-effort, silencioso
   // — quando o usuário escolher a engine Codex, já está pronto (igual ao Claude).
