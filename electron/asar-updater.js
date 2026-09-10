@@ -64,6 +64,17 @@ function platformKey() {
   return null;
 }
 
+// Nome do asset no GitHub Releases. O CI publica POR SISTEMA (asar-mac.json,
+// asar-win.json, asar-linux.json — o asar é JS puro, vale pras duas arquiteturas
+// do mac), mas este updater pedia `asar-mac-arm64.json`, que nunca existiu →
+// 404 → "sem update" → o banner caía pro instalador completo TODA VEZ. O
+// platformKey() com arch fica só pro feed legado, que era organizado assim.
+function feedAsset() {
+  if (process.platform === 'darwin') return 'asar-mac.json';
+  if (process.platform === 'win32') return 'asar-win.json';
+  return 'asar-linux.json';
+}
+
 function httpJson(url, depth = 0) {
   if (depth > 5) return Promise.reject(new Error('too_many_redirects'));
   return new Promise((resolve, reject) => {
@@ -163,7 +174,7 @@ async function checkForUpdate() {
   if (!plat) return { ok: false, reason: 'unsupported_platform' };
   try {
     // GitHub primeiro; o legado cobre quem instalou antes desta versão.
-    let meta = await httpJson(`${FEED_GH}/asar-${plat}.json?t=${Date.now()}`).catch(() => null);
+    let meta = await httpJson(`${FEED_GH}/${feedAsset()}?t=${Date.now()}`).catch(() => null);
     if (!meta || !meta.version) {
       meta = await httpJson(`${FEED_LEGACY}/${plat}/latest.json?t=${Date.now()}`).catch(() => null);
     }

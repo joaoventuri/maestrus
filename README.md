@@ -12,11 +12,11 @@ No cloud account, no limits, nothing phones home.
 
 <br/>
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows-ff8a3d?style=for-the-badge&logo=windows&logoColor=white)](https://maestrus.cloud/downloads/maestrus-win-0.5.6.exe)
-[![Download for macOS](https://img.shields.io/badge/Download-macOS-ff8a3d?style=for-the-badge&logo=apple&logoColor=white)](https://maestrus.cloud/downloads/maestrus-mac-0.5.6.dmg)
-[![Download for Linux](https://img.shields.io/badge/Download-Linux-ff8a3d?style=for-the-badge&logo=linux&logoColor=white)](https://maestrus.cloud/downloads/Maestrus-0.5.6.AppImage)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows-ff8a3d?style=for-the-badge&logo=windows&logoColor=white)](https://maestrus.cloud/downloads/maestrus-win-0.5.7.exe)
+[![Download for macOS](https://img.shields.io/badge/Download-macOS-ff8a3d?style=for-the-badge&logo=apple&logoColor=white)](https://maestrus.cloud/downloads/maestrus-mac-0.5.7.dmg)
+[![Download for Linux](https://img.shields.io/badge/Download-Linux-ff8a3d?style=for-the-badge&logo=linux&logoColor=white)](https://maestrus.cloud/downloads/Maestrus-0.5.7.AppImage)
 
-<sub>Latest **v0.5.6** · [all releases](https://github.com/joaoventuri/maestrus/releases) · Apache-2.0 · no telemetry</sub>
+<sub>Latest **v0.5.7** · [all releases](https://github.com/joaoventuri/maestrus/releases) · Apache-2.0 · no telemetry</sub>
 
 <br/>
 
@@ -223,9 +223,9 @@ to configure.
 
 | | Platform | Get it | Notes |
 |---|---|---|---|
-| <img src="https://cdn.simpleicons.org/windowsxp/ff8a3d" width="18"/> | **Windows** | [`maestrus-win-0.5.6.exe`](https://maestrus.cloud/downloads/maestrus-win-0.5.6.exe) | Installer · auto-updates |
-| <img src="https://cdn.simpleicons.org/apple/ff8a3d" width="18"/> | **macOS** (Apple Silicon) | [`maestrus-mac-0.5.6.dmg`](https://maestrus.cloud/downloads/maestrus-mac-0.5.6.dmg) | Installer · auto-updates |
-| <img src="https://cdn.simpleicons.org/linux/ff8a3d" width="18"/> | **Linux** | [`Maestrus-0.5.6.AppImage`](https://maestrus.cloud/downloads/Maestrus-0.5.6.AppImage) | Portable · `chmod +x` and run |
+| <img src="https://cdn.simpleicons.org/windowsxp/ff8a3d" width="18"/> | **Windows** | [`maestrus-win-0.5.7.exe`](https://maestrus.cloud/downloads/maestrus-win-0.5.7.exe) | Installer · auto-updates |
+| <img src="https://cdn.simpleicons.org/apple/ff8a3d" width="18"/> | **macOS** (Apple Silicon) | [`maestrus-mac-0.5.7.dmg`](https://maestrus.cloud/downloads/maestrus-mac-0.5.7.dmg) | Installer · auto-updates |
+| <img src="https://cdn.simpleicons.org/linux/ff8a3d" width="18"/> | **Linux** | [`Maestrus-0.5.7.AppImage`](https://maestrus.cloud/downloads/Maestrus-0.5.7.AppImage) | Portable · `chmod +x` and run |
 
 > **Node, Git and the Claude CLI ship inside the installer.** No setup steps, no
 > internet needed at install time.
