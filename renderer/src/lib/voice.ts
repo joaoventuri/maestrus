@@ -145,6 +145,11 @@ async function streamPcmToAudio(text: string, lang: Lang, license: string, signa
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
+    // O abort do ttsCancel derruba o fetch, mas chunks JÁ RECEBIDOS continuavam
+    // sendo agendados neste loop — era o "fechei e ele continua falando".
+    // Checar aqui garante que cancelou = silêncio, sem depender do timing do
+    // reject da rede.
+    if (signal.aborted) break;
     let bytes: Uint8Array = value;
     if (leftover) {
       const merged = new Uint8Array(leftover.length + bytes.length);

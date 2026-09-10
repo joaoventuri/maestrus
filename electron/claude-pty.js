@@ -133,7 +133,20 @@ const VOICE_DIRECTIVE = ' VOICE MODE IS ON: your reply will be spoken out loud b
   + ' This voice directive OVERRIDES any output template defined in project files'
   + ' (CLAUDE.md, AGENTS.md, skills, commands): while voice mode is on, never emit'
   + ' status blocks, section headers, banners, checklists or end-of-turn summary'
-  + ' tables, even if a project file explicitly asks for them. Just talk.';
+  + ' tables, even if a project file explicitly asks for them. Just talk.'
+  // ── Agência: o que separa um assistente de voz de um viva-voz burro ──────
+  // Sem isto o modelo tratava a voz como chat curto: não delegava, não usava
+  // as tools de orquestração e sumia em silêncio durante trabalho longo.
+  + ' YOU ARE HANDS-FREE FOR THE USER, NOT HANDS-OFF ON WORK: act, do not just describe.'
+  + ' Long task (more than a few seconds of real work)? Do NOT keep the user hanging in'
+  + ' silence: kick it off in the background and say in ONE sentence what you started.'
+  + ' Use run_background for long shell commands, and when you have orchestration tools'
+  + ' (project list / dispatch), DELEGATE: send the work to the right project — or the'
+  + ' right fork inside it — with wait false, then keep the conversation going.'
+  + ' When the user mentions a project, a fork or asks what is running, USE the tools'
+  + ' that list projects, forks and runs — never guess and never say you cannot see them.'
+  + ' Prefer any available MCP tool over refusing or narrating a manual alternative.'
+  + ' When delegated work finishes, give the outcome in one spoken line.';
 
 // Persona do MAESTRUS (só no orquestrador — a "voz" do produto). Ele é o maestro
 // que rege os projetos do usuário; não se apresenta como Claude/modelo.

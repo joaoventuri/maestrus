@@ -677,6 +677,10 @@ function Chat({ t, project, onBack, onPatch, connected }: any) {
     if (ttsPlayingRef.current || !ttsQueueRef.current.length || !vmodeRef.current) return;
     const sentence = ttsQueueRef.current.shift()!;
     ttsPlayingRef.current = true; speakingRef.current = true; setVstate('speaking'); setVcaption(sentence);
+    // BARGE-IN (mesmo detector rígido do desktop): sua voz confirmada corta a
+    // fala dela; ruído ambiente e o eco do alto-falante não passam do filtro
+    // de banda + duração. Start é idempotente com captura em curso.
+    startListening(true);
     ttsSpeak(sentence, lang as any, () => {
       ttsPlayingRef.current = false;
       if (!vmodeRef.current) { speakingRef.current = false; return; }
@@ -692,22 +696,36 @@ function Chat({ t, project, onBack, onPatch, connected }: any) {
     if (force && remaining.trim()) { ttsQueueRef.current.push(remaining.trim()); ttsAccumRef.current = ''; }
   }
 
-  function startListening() {
-    if (!vmodeRef.current || busyRef.current || speakingRef.current) return;
-    setVstate('listening'); setVcaption('');
+  function startListening(whileSpeaking = false) {
+    if (!vmodeRef.current) return;
+    // busy não bloqueia o barge-in — a fala acontece DURANTE o turno.
+    if (!whileSpeaking && (busyRef.current || speakingRef.current)) return;
+    if (!whileSpeaking) {
+      // Encerra a captura do barge-in antes da escuta normal (o engine ignora
+      // start() com captura em curso — sem isso o 2º turno ficava mudo).
+      try { stt.current.stop(); } catch {}
+      setVstate('listening'); setVcaption('');
+    }
     stt.current.start(lang as any, {
+      // Voz SUA confirmada no meio da fala dela → cala o TTS e passa a ouvir.
+      onSpeechStart: () => {
+        if (!speakingRef.current) return;
+        try { ttsCancel(); resetTtsState(); } catch {}
+        speakingRef.current = false;
+        setVstate('listening');
+      },
       onInterim: (txt: string) => { setVcaption(txt); },
       onFinal: (txt: string) => { setVstate('thinking'); setVcaption(txt); send(txt); },
-      onEnd: () => { if (vmodeRef.current && !busyRef.current && !speakingRef.current) setTimeout(startListening, 350); },
+      onEnd: () => { if (vmodeRef.current && !busyRef.current && !speakingRef.current) setTimeout(() => startListening(), 350); },
       // Falha REAL do STT vira legenda visível — antes voltava pra "Ouvindo"
       // mudo e parecia que o app tinha ficado surdo pra sempre.
       onError: (e: string) => {
         if (e === 'no_api_key') { setVcaption(t('byok.voiceNeedsKey') || 'Adicione sua chave OpenAI em Ajustes para usar a voz.'); return; }
         if (e === 'mic') { setVcaption(t('voice.micDenied') || 'Sem acesso ao microfone.'); return; }
         if (e && e !== 'rec') setVcaption(String(e).slice(0, 120));
-        if (vmodeRef.current && !busyRef.current && !speakingRef.current) setTimeout(startListening, 900);
+        if (vmodeRef.current && !busyRef.current && !speakingRef.current) setTimeout(() => startListening(), 900);
       },
-    });
+    }, { speaking: whileSpeaking });
   }
   async function openJarvis() {
     if (vmode) return;

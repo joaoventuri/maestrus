@@ -252,11 +252,14 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
     // Legenda = MESMO texto que vai ser falado (limpo). Antes mostrava o cru,
     // com asterisco e caminho de arquivo, enquanto a voz dizia outra coisa.
     setVcaption(speakableText(sentence));
-    // BARGE-IN AUTOMÁTICO DESLIGADO. O detector não tem como separar a voz DELA
-    // (que sai pelo alto-falante) da SUA: as duas são voz humana, mesma faixa,
-    // sustentada — o cancelamento de eco do sistema não dá conta, então ela se
-    // cortava sozinha no meio da frase. Interromper agora é ação explícita: o
-    // botão de pausa. Melhor previsível do que "inteligente" e errado.
+    // BARGE-IN: enquanto ela fala, o mic fica aberto no modo RÍGIDO do detector
+    // (piso de ruído adaptativo + energia concentrada na banda da voz 300–3400Hz
+    // + duração mínima + limiar elevado). É o que separa VOCÊ do eco dela no
+    // alto-falante e do ruído ambiente: sua voz confirmada corta a fala na hora
+    // (onSpeechStart em startVoiceListen) e o que você disser vira o próximo
+    // turno. O start é idempotente — com captura em curso o engine ignora, então
+    // chamar a cada sentença não duplica mic.
+    startVoiceListen(true);
     ttsSpeak(sentence, lang as any, () => {
       ttsPlayingRef.current = false;
       if (!vmodeRef.current) { speakingRef.current = false; return; }
@@ -290,8 +293,10 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
   // detector exige voz de verdade (banda 300–3400Hz + duração), então ruído
   // ambiente e o eco da própria IA não cortam a fala dela — só você corta.
   function startVoiceListen(whileSpeaking = false) {
-    if (!vmodeRef.current || busyVRef.current) return;
-    if (!whileSpeaking && speakingRef.current) return;
+    if (!vmodeRef.current) return;
+    // busy NÃO bloqueia o barge-in: a IA fala DURANTE o turno (streaming), e é
+    // exatamente aí que você precisa poder cortá-la. Só a escuta normal espera.
+    if (!whileSpeaking && (busyVRef.current || speakingRef.current)) return;
     if (!whileSpeaking) {
       // ENCERRA a captura do barge-in antes de abrir a escuta normal. Ela fica
       // ativa enquanto a IA fala e, como o engine ignora um start() com captura
