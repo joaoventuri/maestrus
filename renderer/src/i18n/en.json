@@ -1020,6 +1020,17 @@
   },
   "team": {
     "yourName": "Your name (shown to the team and signs your messages)",
-    "inRoom": "In the room"
+    "inRoom": "In the room",
+    "shareTitle": "Share specific conversations",
+    "shareSub": "A link that opens in the browser and shows ONLY what you pick.",
+    "sharePick": "Pick the conversations",
+    "shareWrite": "Can write",
+    "shareRead": "Read-only",
+    "shareGen": "Generate access link",
+    "shareLink": "Send this link — it opens right in the browser, nothing to install.",
+    "shareActive": "Active access",
+    "shareRevoke": "Revoke",
+    "shareNone": "No conversation selected.",
+    "shareProjects": "conversations"
   }
 }

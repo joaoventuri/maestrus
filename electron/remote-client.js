@@ -237,7 +237,8 @@ async function refreshProjects() {
   // Puxa os projetos de cada host em paralelo; um host offline não derruba os outros.
   await Promise.all(Array.from(hosts.values()).map(async (host) => {
     try {
-      const r = await link.rpc(host.deviceId, 'projects.list', {}, 8000);
+      await ensureHello(host.deviceId);
+      const r = await hrpc(host.deviceId, 'projects.list', {}, 8000);
       if (!Array.isArray(r)) throw new Error('bad_list');
       for (const p of r) {
         // Defesa em profundidade: hosts antigos podem ainda anunciar o
@@ -261,18 +262,54 @@ function listProjects() { return cachedProjects; }
 // Equipe: nome de quem usa ESTE device — o host prefixa "Nome: " na mensagem.
 let _authorName = '';
 function setAuthorName(n) { _authorName = String(n || '').trim().slice(0, 40); }
+
+// ─── EQUIPE: hello + sid por host ───────────────────────────────────────────
+// O host só reconhece este device depois do team.hello (prova de casa ou grant
+// com escopo) e devolve um `sid` que TODA chamada precisa ecoar. O main injeta
+// o builder do payload (ele é quem guarda o convite salvo).
+let _teamHelloFn = null;               // () => payload | null
+const _teamSids = new Map();           // hostId → sid
+function setTeamHello(fn) { _teamHelloFn = fn; _teamSids.clear(); }
+async function ensureHello(hostId) {
+  if (!_teamHelloFn || _teamSids.has(hostId) || !link) return;
+  let payload = null;
+  try { payload = _teamHelloFn(); } catch {}
+  if (!payload) return;
+  try {
+    const r = await link.rpc(hostId, 'team.hello', payload, 8000);
+    if (r && r.ok && r.sid) _teamSids.set(hostId, r.sid);
+  } catch { /* host antigo sem team.hello → segue sem sid */ }
+}
+// Choke-point de RPC pro host: injeta o __sid e, se o host disser que exige
+// hello (reiniciou e perdeu os bindings), refaz o hello e tenta UMA vez.
+async function hrpc(hostId, channel, payload = {}, timeout = 30000) {
+  const wrap = () => {
+    const sid = _teamSids.get(hostId);
+    return sid ? { ...payload, __sid: sid } : payload;
+  };
+  try {
+    return await link.rpc(hostId, channel, wrap(), timeout);
+  } catch (e) {
+    if (String(e && e.message || '').includes('team-hello-required')) {
+      _teamSids.delete(hostId);
+      await ensureHello(hostId);
+      return link.rpc(hostId, channel, wrap(), timeout);
+    }
+    throw e;
+  }
+}
 async function send(remoteId, message) {
   const r = parse(remoteId); if (!r || !link) throw new Error('Sem conexão remota');
-  return link.rpc(r.hostId, 'claude.send', { projectId: r.projectId, message, author: _authorName || undefined }, 120000);
+  return hrpc(r.hostId, 'claude.send', { projectId: r.projectId, message, author: _authorName || undefined }, 120000);
 }
 async function loadHistory(remoteId) {
   const r = parse(remoteId); if (!r || !link) return [];
-  return link.rpc(r.hostId, 'claude.loadHistory', { projectId: r.projectId }, 15000).catch(() => []);
+  return hrpc(r.hostId, 'claude.loadHistory', { projectId: r.projectId }, 15000).catch(() => []);
 }
 // Watchdog: o turno ainda está rodando NO HOST? Usado pra destravar o "pensando".
 async function statusOf(remoteId) {
   const r = parse(remoteId); if (!r || !link) return { busy: false, known: false };
-  const res = await link.rpc(r.hostId, 'claude.status', { projectId: r.projectId }, 6000).catch(() => null);
+  const res = await hrpc(r.hostId, 'claude.status', { projectId: r.projectId }, 6000).catch(() => null);
   return res && typeof res.busy === 'boolean' ? { busy: !!res.busy, known: res.known !== false } : { busy: false, known: false };
 }
 async function statusShared(id) {
@@ -284,12 +321,12 @@ async function statusShared(id) {
 // de cada dispositivo ter a sua.
 async function queueCall(remoteId, method, params = {}) {
   const r = parse(remoteId); if (!r || !link) return null;
-  return link.rpc(r.hostId, method, { ...params, projectId: r.projectId }, 8000).catch(() => null);
+  return hrpc(r.hostId, method, { ...params, projectId: r.projectId }, 8000).catch(() => null);
 }
 
 async function stopProject(remoteId) {
   const r = parse(remoteId); if (!r || !link) return false;
-  return link.rpc(r.hostId, 'claude.stop', { projectId: r.projectId }, 8000).catch(() => false);
+  return hrpc(r.hostId, 'claude.stop', { projectId: r.projectId }, 8000).catch(() => false);
 }
 
 // Dispatch one-shot pra um projeto remoto/cloud: dispara claude.send e coleta
@@ -307,7 +344,7 @@ async function dispatchOneShot(remoteId, message, { timeoutMs = 300000 } = {}) {
     const tid = setTimeout(() => { cleanup(); resolve({ text: lastAssistant, usage: null, cost: 0, sessionId: null }); }, timeoutMs);
     function cleanup() { clearTimeout(tid); dispatchListeners.delete(listener); }
     dispatchListeners.add(listener);
-    link.rpc(r.hostId, 'claude.send', { projectId: r.projectId, message }, timeoutMs).catch((e) => { cleanup(); reject(e); });
+    hrpc(r.hostId, 'claude.send', { projectId: r.projectId, message }, timeoutMs).catch((e) => { cleanup(); reject(e); });
   });
 }
 
@@ -320,7 +357,7 @@ async function patchProject(id, patch) {
   }
   if (!Object.keys(allowed).length) return null;
   try {
-    const updated = await link.rpc(r.hostId, 'projects.patch', { id: r.projectId, patch: allowed }, 8000);
+    const updated = await hrpc(r.hostId, 'projects.patch', { id: r.projectId, patch: allowed }, 8000);
     if (updated) {
       const host = hosts.get(r.hostId) || { deviceId: r.hostId, name: 'Host', os: '' };
       const tagged = tag(updated, host);
@@ -341,7 +378,7 @@ async function patchProject(id, patch) {
 async function createOnHost(hostId, input) {
   if (!link) throw new Error('not_connected');
   const host = hosts.get(hostId) || { deviceId: hostId, name: 'Host', os: '' };
-  const res = await link.rpc(hostId, 'projects.create', input || {}, 240000);
+  const res = await hrpc(hostId, 'projects.create', input || {}, 240000);
   if (!res || res.ok === false) throw new Error((res && res.error) || 'create_failed');
   try { refreshProjects(); } catch {}
   return tag(res, host);
@@ -361,7 +398,7 @@ async function uploadSessionToHost(hostId, projectId, sessionId, filePath, onPro
     for (let index = 0; index < total; index++) {
       const read = fs.readSync(fd, buf, 0, CHUNK, index * CHUNK);
       const dataB64 = buf.subarray(0, read).toString('base64');
-      const r = await link.rpc(hostId, 'sessions.uploadChunk', { projectId, sessionId, index, total, dataB64 }, 60000);
+      const r = await hrpc(hostId, 'sessions.uploadChunk', { projectId, sessionId, index, total, dataB64 }, 60000);
       if (!r || r.ok === false) throw new Error((r && r.error) || 'upload_failed');
       if (typeof onProgress === 'function') { try { onProgress(Math.round(((index + 1) / total) * 100)); } catch {} }
     }
@@ -383,7 +420,7 @@ async function deleteOnHost(id) {
   if (!link) throw new Error('not_connected');
   const r = parse(id);
   if (!r) throw new Error('bad_id');
-  const res = await link.rpc(r.hostId, 'projects.delete', { id: r.projectId }, 30000);
+  const res = await hrpc(r.hostId, 'projects.delete', { id: r.projectId }, 30000);
   if (!res || res.ok === false) throw new Error((res && res.error) || 'delete_failed');
   cachedProjects = cachedProjects.filter((p) => p.id !== id);
   try { refreshProjects(); } catch {}
@@ -487,11 +524,12 @@ function sharedRpc(id, channel, payload, timeout) {
 // canal (claude.*, claudeProfiles.*, files.upload…) sem wrapper dedicado.
 function rpc(hostId, channel, payload = {}, timeout = 30000) {
   if (!link) return Promise.reject(new Error('remote não conectado'));
-  return link.rpc(hostId || primaryHostId, channel, payload, timeout);
+  return hrpc(hostId || primaryHostId, channel, payload, timeout);
 }
 
 function updateToken(token) { if (link && token) link.opts.token = token; }
 function disconnect() {
+  _teamSids.clear();
   try { link && link.close(); } catch {}
   if (_refreshTimer) { clearTimeout(_refreshTimer); _refreshTimer = null; }
   _pendingDrop.forEach((t) => clearTimeout(t)); _pendingDrop.clear();
@@ -524,6 +562,7 @@ async function stopShared(id) { return sharedRpc(id, 'claude.stop', {}, 8000).ca
 
 module.exports = {
   setAuthorName,
+  setTeamHello,
   start, startDiscovery, refreshProjects, listProjects, send, loadHistory, statusOf, statusShared, stopProject, dispatchOneShot, patchProject, createOnHost, uploadSessionToHost, deleteOnHost, isHostConnected, setSelfHostId,
   startShared, listSharedProjects, disconnectShared, sharedRpc, sendShared, loadHistoryShared, stopShared,
   rpc, queueCall, isRemote, isShared, isCloudHost, getHostId, getHosts, hasHost, addHost, updateToken, disconnect, reconnect, getState, isHealthy, setOnState, setOnRemoteEvent, setOnProjectsChanged, setOnIdentityConflict,

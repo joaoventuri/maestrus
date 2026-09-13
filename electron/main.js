@@ -1819,6 +1819,8 @@ function startHostViaInvite(secret) {
   if (_hostRefreshTimer) { clearInterval(_hostRefreshTimer); _hostRefreshTimer = null; }
   try { remoteClient.disconnect(); } catch {}
   const did = cloud.getDeviceId();
+  // O host passa a ser o juiz de escopo desta sala (team.hello/grants).
+  try { remoteHost.setTeamSecret(secret); } catch {}
   return remoteHost.start({ url: inviteUrl(secret, did, 'host'), token: '', deviceId: did });
 }
 
@@ -1875,20 +1877,98 @@ ipcMain.handle('invite:state', async () => {
 // assina prova válida, e o código que circulou por aí vira papel velho.
 ipcMain.handle('invite:revoke', async () => {
   try { projectStore.setSetting('invite_host', null); } catch {}
+  try { projectStore.setSetting('invite_grants', []); } catch {}   // sala morreu, grants junto
+  try { remoteHost.setTeamSecret(null); } catch {}
   try { remoteHost.stop(); } catch {}
   return { ok: true };
 });
 
+// ─── Convites com ESCOPO: compartilhar só conversas específicas ─────────────
+// O link gerado abre direto no PWA/web (https…/app#c=…): o funcionário clica,
+// o navegador entra na sala e só vê os projetos do grant. O host é quem julga
+// (team.hello em remote-host.js) — o relay continua burro.
+ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
+  const projects = Array.isArray(opts.projects) ? opts.projects.filter(Boolean).map(String) : [];
+  if (!projects.length) return { ok: false, error: 'projects_required' };
+  // Garante a sala aberta (reusa o segredo; cria se for a primeira vez).
+  let hostInv = getInviteHost();
+  if (!hostInv || !hostInv.secret) {
+    const relayUrl = inviteRelayUrl();
+    const inv = invite.create({ relayUrl, hostName: require('os').hostname() });
+    hostInv = { secret: inv.secret, room: inv.room, relayUrl, createdAt: Date.now() };
+    try { projectStore.setSetting('invite_host', hostInv); } catch {}
+  }
+  let running = false; try { running = !!remoteHost.getState().running; } catch {}
+  if (!running) {
+    const r = startHostViaInvite(hostInv.secret);
+    if (!r || r.ok === false) return { ok: false, error: (r && r.error) || 'host_failed' };
+  } else {
+    try { remoteHost.setTeamSecret(hostInv.secret); } catch {}
+  }
+  let sc;
+  try {
+    sc = invite.createScoped({
+      relayUrl: hostInv.relayUrl || inviteRelayUrl(),
+      secret: hostInv.secret,
+      hostName: require('os').hostname(),
+      projects,
+      write: opts.write !== false,
+      ttlMs: Number(opts.ttlMs) > 0 ? Number(opts.ttlMs) : undefined,
+    });
+  } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+  // Registro do grant: é o que permite REVOGAR um convite sem girar a sala.
+  try {
+    const all = projectStore.getSetting('invite_grants') || [];
+    all.push({ id: sc.grantId, p: projects, w: opts.write !== false, e: sc.expiresAt, label: String(opts.label || '').slice(0, 60), createdAt: Date.now() });
+    projectStore.setSetting('invite_grants', all);
+  } catch {}
+  const webBase = `${require('./config').BASE}/app`;
+  return { ok: true, code: sc.code, grantId: sc.grantId, expiresAt: sc.expiresAt, url: `${webBase}#c=${sc.code}` };
+});
+ipcMain.handle('invite:grants', async () => {
+  const all = (projectStore.getSetting('invite_grants') || []).filter((g) => g && !g.revoked);
+  return { ok: true, grants: all };
+});
+ipcMain.handle('invite:revokeGrant', async (_e, id) => {
+  try {
+    const all = projectStore.getSetting('invite_grants') || [];
+    for (const g of all) if (g && g.id === id) g.revoked = true;
+    projectStore.setSetting('invite_grants', all);
+  } catch {}
+  return { ok: true };
+});
+
+// Payload do team.hello deste device — v1 (da casa) prova com o fullMac; v2
+// (escopo) apresenta o grant. O remote-client chama isto por host descoberto.
+function buildTeamHello() {
+  const c = getInviteClient();
+  if (!c) return null;
+  const name = userName() || undefined;
+  if (c.secret) return { full: invite.fullMac(c.secret, clientDid()), name };
+  if (c.grant && c.grantSig) return { grant: c.grant, grantSig: c.grantSig, name };
+  return null;
+}
+function startClientViaInviteRaw(room, proof) {
+  if (_clientRefreshTimer) { clearInterval(_clientRefreshTimer); _clientRefreshTimer = null; }
+  const did = clientDid();
+  remoteClient.setSelfHostId(cloud.getDeviceId());
+  const base = inviteRelayUrl();
+  const url = withName(`${base}${base.includes('?') ? '&' : '?'}${invite.connectQueryRaw(room, proof, did, 'client')}`);
+  return remoteClient.startDiscovery({ url, token: '', deviceId: did });
+}
 function joinInvite(code) {
   const p = invite.parse(code);
   if (!p.ok) return { ok: false, error: p.error };
-  const r = startClientViaInvite(p.secret);
+  const r = p.scoped ? startClientViaInviteRaw(p.room, p.proof) : startClientViaInvite(p.secret);
   if (!r || r.ok === false) return { ok: false, error: (r && r.error) || 'connect_failed' };
   try {
-    projectStore.setSetting('invite_client', { secret: p.secret, room: p.room, relayUrl: p.relayUrl, hostName: p.hostName });
+    projectStore.setSetting('invite_client', p.scoped
+      ? { room: p.room, proof: p.proof, relayUrl: p.relayUrl, hostName: p.hostName, grant: p.grant, grantSig: p.grantSig }
+      : { secret: p.secret, room: p.room, relayUrl: p.relayUrl, hostName: p.hostName });
     projectStore.setSetting('app_mode', 'client');
   } catch {}
-  return { ok: true, room: p.room, hostName: p.hostName };
+  remoteClient.setTeamHello(buildTeamHello);
+  return { ok: true, room: p.room, hostName: p.hostName, scoped: !!p.scoped };
 }
 ipcMain.handle('invite:join', async (_e, code) => joinInvite(code));
 
@@ -1924,7 +2004,12 @@ ipcMain.handle('invite:leave', async () => {
 // novo toda vez.
 function resumeInvites() {
   try { const h = getInviteHost(); if (h && h.secret) startHostViaInvite(h.secret); } catch {}
-  try { const c = getInviteClient(); if (c && c.secret) startClientViaInvite(c.secret); } catch {}
+  try {
+    const c = getInviteClient();
+    if (c) remoteClient.setTeamHello(buildTeamHello);
+    if (c && c.secret) startClientViaInvite(c.secret);
+    else if (c && c.room && c.proof) startClientViaInviteRaw(c.room, c.proof);
+  } catch {}
 }
 
 // ─── Maestrus remoto: modo CLIENT ───────────────────────────────────────────

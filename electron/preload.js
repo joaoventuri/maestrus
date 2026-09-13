@@ -354,6 +354,10 @@ contextBridge.exposeInMainWorld('maestrus', {
     revoke: () => ipcRenderer.invoke('invite:revoke'),
     join: (code) => ipcRenderer.invoke('invite:join', code),
     leave: () => ipcRenderer.invoke('invite:leave'),
+    // Convites com ESCOPO: compartilhar só conversas específicas (equipe).
+    createScoped: (opts) => ipcRenderer.invoke('invite:createScoped', opts || {}),
+    grants: () => ipcRenderer.invoke('invite:grants'),
+    revokeGrant: (id) => ipcRenderer.invoke('invite:revokeGrant', id),
     // Convite aceito por deep link (maestrus://pair) — a UI precisa saber que
     // entrou numa sala sem ter clicado em nada aqui dentro.
     onJoined: (fn) => {

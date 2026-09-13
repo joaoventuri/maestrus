@@ -3,7 +3,7 @@
 // Caso de uso mobile = REMOTO: loga na cloud, conecta num host e opera o CLI
 // dele. Tudo o que não se aplica no mobile vira no-op seguro.
 
-import { parseInvite, inviteConnectUrl } from './invite-web';
+import { parseInvite, inviteConnectUrl, inviteConnectUrlRaw, fullMac } from './invite-web';
 
 const API_BASE = 'https://maestrus.cloud/api.php';
 // SELF-HOST: quando o web é servido pelo próprio maestrus-server (não pelo
@@ -269,11 +269,23 @@ class WebRelayLink {
     const ws = this.hlWaiters.splice(0); for (const w of ws) { clearTimeout(w.t); w.rej(new Error(reason)); }
   }
   rpc(channel: string, payload: any, timeoutMs = 120000): Promise<any> {
-    return new Promise((res, rej) => {
+    // EQUIPE: o host exige o sid do team.hello em toda chamada. Injetar aqui é
+    // o ponto único — nenhum call-site precisa saber que escopo existe.
+    const pl = (_teamSid && channel !== 'team.hello') ? { ...payload, __sid: _teamSid } : payload;
+    const doCall = (body: any) => new Promise<any>((res, rej) => {
       const reqId = `${Date.now()}-${++this.seq}`;
       const t = setTimeout(() => { this.pending.delete(reqId); rej(new Error('rpc-timeout')); }, timeoutMs);
       this.pending.set(reqId, { res, rej, t });
-      if (!this.send(FRAME.RPC_REQUEST, { to: this.hostId, reqId, channel, payload })) { clearTimeout(t); this.pending.delete(reqId); rej(new Error('send-failed')); }
+      if (!this.send(FRAME.RPC_REQUEST, { to: this.hostId, reqId, channel, payload: body })) { clearTimeout(t); this.pending.delete(reqId); rej(new Error('send-failed')); }
+    });
+    return doCall(pl).catch(async (e) => {
+      // Host reiniciou → binding sumiu. Refaz o hello e tenta UMA vez.
+      if (String(e && e.message || '').includes('team-hello-required')) {
+        _teamSid = null;
+        await teamHello(this).catch(() => {});
+        return doCall(_teamSid ? { ...payload, __sid: _teamSid } : payload);
+      }
+      throw e;
     });
   }
   hostList(timeoutMs = 5000): Promise<any[]> {
@@ -747,12 +759,36 @@ function withTeamName(url: string): string {
 
 function savedInvite(): any { try { return JSON.parse(localStorage.getItem(LS_INVITE) || 'null'); } catch { return null; } }
 
+// Sessão de equipe deste tab: sid devolvido pelo team.hello do host.
+let _teamSid: string | null = null;
+
+// Apresenta-se ao host: "da casa" (fullMac, quando temos o segredo) ou grant
+// com escopo (convite v2). Sem convite salvo é no-op — conexões por conta não
+// mudam em nada.
+async function teamHello(l?: any): Promise<void> {
+  const inv = savedInvite();
+  const lk = l || link;
+  if (!inv || !lk || !lk.hostId) return;
+  let payload: any = null;
+  if (inv.secret) payload = { full: await fullMac(inv.secret, deviceId()), name: teamName() || undefined };
+  else if (inv.grant && inv.grantSig) payload = { grant: inv.grant, grantSig: inv.grantSig, name: teamName() || undefined };
+  if (!payload) return;
+  try {
+    const r = await lk.rpc('team.hello', payload, 8000);
+    if (r && r.ok && r.sid) _teamSid = r.sid;
+  } catch { /* host antigo sem team.hello → segue sem sid */ }
+}
+
 // Entra na sala e gruda no primeiro host que responder. Sem `hostId` os RPCs
 // não teriam pra onde ir — por isso listamos os hosts antes de dar ok.
-async function connectInvite(relayUrl: string, secret: string, name: string | null): Promise<any> {
+// `conn` = credencial: { secret } (v1, da casa) ou { room, proof } (v2, escopo).
+async function connectInvite(relayUrl: string, conn: any, name: string | null): Promise<any> {
   try { link?.close(); } catch {}
-  hostId = null; hostName = name; cachedProjects = [];
-  startClientLink(withTeamName(await inviteConnectUrl(relayUrl, secret, deviceId(), 'client')), '', true);
+  hostId = null; hostName = name; cachedProjects = []; _teamSid = null;
+  const url = conn.secret
+    ? await inviteConnectUrl(relayUrl, conn.secret, deviceId(), 'client')
+    : inviteConnectUrlRaw(relayUrl, conn.room, conn.proof, deviceId());
+  startClientLink(withTeamName(url), '', true);
   const d = Date.now() + 8000;
   while (Date.now() < d && !clientState.connected) await new Promise((r) => setTimeout(r, 200));
   if (!clientState.connected) return { ok: false, error: 'relay_unreachable' };
@@ -763,6 +799,7 @@ async function connectInvite(relayUrl: string, secret: string, name: string | nu
   if (!did) return { ok: false, error: 'host_offline' };
   hostId = did; hostName = h.name || name || 'Host';
   if (link) link.hostId = did;
+  await teamHello();          // ANTES do projects.list: com escopo, sem hello a lista vem vazia
   emitClientState();
   await refreshProjects().catch(() => {});
   emitProjectsChanged();
@@ -772,20 +809,27 @@ async function connectInvite(relayUrl: string, secret: string, name: string | nu
 async function joinInvite(code: string): Promise<any> {
   const p = parseInvite(code);
   if (!p.ok) return { ok: false, error: p.error };
-  const r = await connectInvite(p.relayUrl, p.secret, p.hostName);
+  const conn = p.scoped ? { room: p.room, proof: p.proof } : { secret: p.secret };
+  const r = await connectInvite(p.relayUrl, conn, p.hostName);
   // Só persiste convite que FUNCIONOU: guardar um que não conecta faria o app
   // insistir nele em todo boot e nunca cair no caminho da conta.
-  if (r.ok) { try { localStorage.setItem(LS_INVITE, JSON.stringify({ relayUrl: p.relayUrl, secret: p.secret, hostName: r.hostName, ts: Date.now() })); } catch {} }
+  if (r.ok) {
+    try {
+      localStorage.setItem(LS_INVITE, JSON.stringify(p.scoped
+        ? { relayUrl: p.relayUrl, room: p.room, proof: p.proof, grant: p.grant, grantSig: p.grantSig, hostName: r.hostName, ts: Date.now() }
+        : { relayUrl: p.relayUrl, secret: p.secret, hostName: r.hostName, ts: Date.now() }));
+    } catch {}
+  }
   return r;
 }
 
 async function resumeInvite(): Promise<any> {
   const inv = savedInvite();
-  if (!inv || !inv.secret || !inv.relayUrl) return { ok: false, error: 'no_invite' };
+  if (!inv || !inv.relayUrl || (!inv.secret && !(inv.room && inv.proof))) return { ok: false, error: 'no_invite' };
   // Sala já viva → não derruba pra "reconectar": connectInvite fecha o link, e
   // fechar um link saudável a cada wake era metade do pisca conecta/desconecta.
   if (link && link.isOpen() && clientState.connected && hostId) return { ok: true, already: true };
-  return connectInvite(inv.relayUrl, inv.secret, inv.hostName || null);
+  return connectInvite(inv.relayUrl, inv.secret ? { secret: inv.secret } : { room: inv.room, proof: inv.proof }, inv.hostName || null);
 }
 
 async function doDiscover(): Promise<any> {
@@ -962,6 +1006,16 @@ function installLifecycle() {
 
 export function installMaestrusWeb() {
   if ((window as any).maestrus) return;
+  // Link de convite (https://…/app#c=…): clicou, entrou. O hash sai da URL na
+  // hora — convite não pode ficar no histórico/bookmark do navegador.
+  try {
+    const m = (location.hash || '').match(/[#&]c=([A-Za-z0-9_-]+)/);
+    if (m) {
+      const code = m[1];
+      history.replaceState(null, '', location.pathname + location.search);
+      setTimeout(() => { joinInvite(code).catch(() => {}); }, 250);
+    }
+  } catch {}
   const noop = async () => ({ ok: false });
   (window as any).maestrus = {
     platform: 'web',

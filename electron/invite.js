@@ -74,6 +74,17 @@ function parse(input) {
   } catch {
     return { ok: false, error: 'malformed' };
   }
+  // v2 = convite com ESCOPO: room+proof (sem segredo) + grant assinado.
+  if (p && p.v === 2) {
+    if (!p.u || !p.r || !p.pr || !p.g || !p.s) return { ok: false, error: 'incomplete' };
+    if (p.g.e && Date.now() > p.g.e) return { ok: false, error: 'expired', expiredAt: p.g.e };
+    return {
+      ok: true, scoped: true,
+      relayUrl: p.u, room: p.r, proof: p.pr,
+      grant: p.g, grantSig: p.s,
+      hostName: p.n || null, expiresAt: p.g.e || null,
+    };
+  }
   if (!p || p.v !== VERSION) return { ok: false, error: 'unsupported_version' };
   if (!p.u || !p.s) return { ok: false, error: 'incomplete' };
   // Expirado é um "não" claro: um código eterno vazado num chat vira porta
@@ -81,7 +92,7 @@ function parse(input) {
   if (p.e && Date.now() > p.e) return { ok: false, error: 'expired', expiredAt: p.e };
 
   return {
-    ok: true,
+    ok: true, scoped: false,
     relayUrl: p.u,
     secret: p.s,
     room: roomFromSecret(p.s),
@@ -93,6 +104,71 @@ function parse(input) {
 /** URL para QR code e link clicável — mesmo dado, outra embalagem. */
 function toUrl(code) {
   return `maestrus://pair?c=${code}`;
+}
+
+// ─── Convite com ESCOPO (v2): compartilhar SÓ conversas específicas ─────────
+//
+// O v1 entrega o SEGREDO da sala — quem tem, é da casa: acesso total. O v2
+// entrega três coisas e nenhuma delas é o segredo:
+//   room + proof  → entra no relay (o relay aceita a prova, não o segredo)
+//   grant + sig   → o QUE pode ver/fazer, assinado pelo host
+// A assinatura usa uma chave DERIVADA do segredo (scopeKey). Quem só tem o
+// convite v2 não conhece o segredo → não deriva a chave → não forja escopo
+// maior. E girar o segredo da sala revoga TODOS os grants de uma vez, de
+// graça — a chave deles morre junto.
+function scopeKey(secret) {
+  return crypto.createHmac('sha256', String(secret)).update('maestrus-scope-key').digest();
+}
+
+// Forma canônica do grant: campos em ordem FIXA. JSON.stringify de objeto não
+// garante ordem entre implementações — assinar o objeto cru daria "assinatura
+// inválida" aleatória entre desktop e browser.
+function canonicalGrant(g) {
+  return JSON.stringify({ id: g.id, p: [...g.p].sort(), w: g.w ? 1 : 0, e: g.e || 0 });
+}
+function signGrant(secret, g) {
+  return crypto.createHmac('sha256', scopeKey(secret)).update(canonicalGrant(g)).digest('base64url').slice(0, 43);
+}
+function verifyGrant(secret, g, sig) {
+  if (!g || !Array.isArray(g.p) || !g.id) return false;
+  if (g.e && Date.now() > g.e) return false;
+  const want = signGrant(secret, g);
+  const a = Buffer.from(String(sig || ''));
+  const b = Buffer.from(want);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * Cria um convite v2 limitado a `projects`. `write:false` = só leitura.
+ * O grant expira por conta própria (padrão 30 dias) — separado do TTL do
+ * código v1, porque um acesso de equipe não pode morrer em 15 minutos.
+ */
+function createScoped({ relayUrl, secret, hostName, projects, write = true, ttlMs = 30 * 24 * 3600e3 } = {}) {
+  if (!relayUrl || !secret) throw new Error('relayUrl_and_secret_required');
+  if (!Array.isArray(projects) || projects.length === 0) throw new Error('projects_required');
+  const g = {
+    id: crypto.randomBytes(8).toString('base64url'),
+    p: projects.map(String),
+    w: !!write,
+    e: Date.now() + Math.max(60_000, ttlMs),
+  };
+  const payload = {
+    v: 2,
+    u: String(relayUrl),
+    r: roomFromSecret(secret),
+    pr: proofFor(secret),
+    g,
+    s: signGrant(secret, g),
+    n: hostName ? String(hostName).slice(0, 60) : null,
+  };
+  const code = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  return { code, grantId: g.id, room: payload.r, expiresAt: g.e };
+}
+
+/** Prova "sou da casa" (conheço o segredo) que um device FULL apresenta no
+ *  team.hello — amarrada ao deviceId pra não ser emprestável entre devices. */
+function fullMac(secret, deviceId) {
+  return crypto.createHmac('sha256', String(secret)).update('maestrus-full:' + String(deviceId)).digest('base64url').slice(0, 43);
 }
 
 /**
@@ -124,6 +200,10 @@ function connectQuery(secret, deviceId, role) {
   const room = roomFromSecret(secret);
   return `room=${room}&proof=${proofFor(secret)}&did=${encodeURIComponent(deviceId)}&role=${role === 'host' ? 'host' : 'client'}`;
 }
+/** Idem, para quem tem room+proof mas NÃO o segredo (convite com escopo). */
+function connectQueryRaw(room, proof, deviceId, role) {
+  return `room=${room}&proof=${proof}&did=${encodeURIComponent(deviceId)}&role=${role === 'host' ? 'host' : 'client'}`;
+}
 
 /**
  * URL completa de conexão ao relay. Existe aqui (e não no main) porque montar
@@ -136,4 +216,4 @@ function connectUrl(relayUrl, secret, deviceId, role) {
   return `${base}${base.includes('?') ? '&' : '?'}${connectQuery(secret, deviceId, role)}`;
 }
 
-module.exports = { connectUrl, proofFor, connectQuery, VERSION, newSecret, roomFromSecret, create, parse, toUrl, signToken, DEFAULT_TTL_MS };
+module.exports = { connectUrl, connectQueryRaw, scopeKey, signGrant, verifyGrant, createScoped, fullMac, canonicalGrant, proofFor, connectQuery, VERSION, newSecret, roomFromSecret, create, parse, toUrl, signToken, DEFAULT_TTL_MS };

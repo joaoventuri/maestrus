@@ -46,6 +46,39 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
     (window.maestrus.app as any).setCloudSetting?.('user_name', n.trim().slice(0, 40)).catch(() => {});
   }
 
+  // ── Compartilhar conversas ESPECÍFICAS (convite com escopo) ──────────────
+  const [shareOpen, setShareOpen] = useState(false);
+  const [allProjects, setAllProjects] = useState<any[]>([]);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [shareWrite, setShareWrite] = useState(true);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [grants, setGrants] = useState<any[]>([]);
+  function loadShare() {
+    window.maestrus.projects.list().then((ps: any[]) => setAllProjects((ps || []).filter((p) => !p.cloud && p.id !== 'maestrus' && p.id !== 'starter'))).catch(() => {});
+    inviteApi?.grants?.().then((r: any) => setGrants(r?.grants || [])).catch(() => {});
+  }
+  useEffect(() => { if (shareOpen) loadShare(); }, [shareOpen]);
+  function toggleSel(id: string) {
+    setSel((cur) => { const n = new Set(cur); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setShareUrl(null);
+  }
+  async function genShare() {
+    if (!sel.size) return;
+    setShareBusy(true); setError(null); setShareUrl(null);
+    try {
+      const r = await inviteApi?.createScoped?.({ projects: [...sel], write: shareWrite });
+      if (r?.ok && r.url) { setShareUrl(r.url); refreshInvite(); loadShare(); }
+      else setError(t('invite.errCreate'));
+    } finally { setShareBusy(false); }
+  }
+  async function revokeGrant(id: string) {
+    await inviteApi?.revokeGrant?.(id).catch(() => {});
+    loadShare();
+  }
+  function nameOf(pid: string) { return allProjects.find((p) => p.id === pid)?.name || pid.slice(0, 8); }
+
   function refreshInvite() {
     inviteApi?.state?.().then((s: any) => {
       setInvHost(!!s?.host);
@@ -325,6 +358,64 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
               </>
             )}
           </div>
+        )}
+
+        {/* ── Compartilhar SÓ conversas específicas (equipe via navegador) ── */}
+        {tab === 'host' && !isWeb && (
+          <details className="remote-advanced span-2" open={shareOpen} onToggle={(e: any) => setShareOpen(e.currentTarget.open)}>
+            <summary>
+              <ChevronDown size={14} className="remote-adv-chev" />
+              <Users size={14} /> {t('team.shareTitle')}
+            </summary>
+            <div className="remote-adv-body">
+              <p className="remote-explain" style={{ margin: 0 }}>{t('team.shareSub')}</p>
+
+              <div className="share-pick">
+                <div className="share-pick-h">{t('team.sharePick')}</div>
+                {allProjects.map((p) => (
+                  <label key={p.id} className="share-item">
+                    <input type="checkbox" checked={sel.has(p.id)} onChange={() => toggleSel(p.id)} />
+                    <span>{p.name}</span>
+                  </label>
+                ))}
+                {allProjects.length === 0 && <div className="cloud-hint">—</div>}
+              </div>
+
+              <div className="share-perm">
+                <button className={`remote-tab ${shareWrite ? 'active' : ''}`} onClick={() => { setShareWrite(true); setShareUrl(null); }}>{t('team.shareWrite')}</button>
+                <button className={`remote-tab ${!shareWrite ? 'active' : ''}`} onClick={() => { setShareWrite(false); setShareUrl(null); }}>{t('team.shareRead')}</button>
+              </div>
+
+              {shareUrl ? (
+                <div className="remote-pair">
+                  <div className="remote-qr"><QRCodeSVG value={shareUrl} size={148} includeMargin /></div>
+                  <button className="remote-code long" onClick={() => { navigator.clipboard?.writeText(shareUrl); setShareCopied(true); setTimeout(() => setShareCopied(false), 1500); }}>
+                    <code>{shareUrl.slice(0, 34)}…</code>{shareCopied ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                  <div className="cloud-hint">{t('team.shareLink')}</div>
+                </div>
+              ) : (
+                <button className="cloud-submit" style={{ maxWidth: 320 }} onClick={genShare} disabled={shareBusy || !sel.size} title={!sel.size ? t('team.shareNone') : ''}>
+                  {shareBusy ? <Loader2 size={16} className="spin" /> : <><Link2 size={15} /> {t('team.shareGen')}</>}
+                </button>
+              )}
+
+              {grants.length > 0 && (
+                <div className="share-grants">
+                  <div className="share-pick-h">{t('team.shareActive')}</div>
+                  {grants.map((g) => (
+                    <div key={g.id} className="share-grant">
+                      <span className="share-grant-label">
+                        {(g.p || []).slice(0, 3).map(nameOf).join(', ')}{(g.p || []).length > 3 ? ` +${g.p.length - 3}` : ''}
+                        <em> · {g.w ? t('team.shareWrite') : t('team.shareRead')}</em>
+                      </span>
+                      <button className="dev-del" title={t('team.shareRevoke')} onClick={() => revokeGrant(g.id)}><Trash2 size={13} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </details>
         )}
 
         {/* ── CONECTAR ────────────────────────────────────────────────────── */}

@@ -68,6 +68,29 @@ let unsub = null;
 // virava assinante de TODOS os projetos (vazava streaming/tool-results de
 // projetos não compartilhados). Agora o push é filtrado por projeto.
 const subscribers = new Map();
+
+// ─── EQUIPE com escopo (convite v2) ─────────────────────────────────────────
+// O host é o único juiz do que cada device pode ver. O relay não sabe nada;
+// a prova de acesso é o `team.hello`: FULL prova que conhece o segredo da
+// sala (fullMac amarrado ao deviceId), SCOPED apresenta o grant assinado com
+// a chave derivada do segredo. O binding ganha um `sid` aleatório que TODA
+// chamada seguinte precisa ecoar — se alguém derrubar a conexão de um colega
+// e assumir o deviceId dele no relay, não herda o acesso: não tem o sid.
+const inviteLib = require('./invite');
+const nodeCrypto = require('crypto');
+let teamSecret = null;                 // segredo da sala do convite (setado pelo main)
+function setTeamSecret(s) { teamSecret = s || null; if (!teamSecret) teamBindings.clear(); }
+const teamBindings = new Map();        // did → { pids:Set|null, write, name, sid, grantId? }
+function activeGrants() {
+  try {
+    const all = projectStore.getSetting('invite_grants') || [];
+    return all.filter((g) => g && !g.revoked && (!g.e || Date.now() < g.e));
+  } catch { return []; }
+}
+function timingEq(a, b) {
+  const ba = Buffer.from(String(a || '')); const bb = Buffer.from(String(b || ''));
+  return ba.length === bb.length && nodeCrypto.timingSafeEqual(ba, bb);
+}
 const _histCache = new Map(); // projectId → { mtime, size, payload } — reabrir conversa sem re-parsear
 let state = { running: false, status: 'idle', error: null };
 // Equipe: devices de OUTRAS pessoas presentes na sala (via presence do relay).
@@ -205,13 +228,64 @@ async function handleRpc(f, reply, fail) {
   const isShare = !!shareClaims;
   const isMember = isShare && shareClaims.member === true;   // membro de workspace
   const isGuest = isShare && !isMember;                       // guest de share por-projeto
+
+  // ─── EQUIPE: hello + binding por sid ──────────────────────────────────────
+  if (!isShare && channel === 'team.hello') {
+    if (!teamSecret) return reply({ ok: false, error: 'no_room' });
+    const name = String((payload && payload.name) || '').slice(0, 40);
+    // Da casa: prova que conhece o segredo, amarrada a ESTE deviceId.
+    if (payload && payload.full && timingEq(payload.full, inviteLib.fullMac(teamSecret, from))) {
+      const sid = nodeCrypto.randomBytes(12).toString('base64url');
+      teamBindings.set(from, { pids: null, write: true, name, sid });
+      subscribers.set(from, { pids: null, write: true });
+      return reply({ ok: true, sid, full: true });
+    }
+    // Convidado com escopo: grant assinado + ainda listado (revogável) na loja.
+    if (payload && payload.grant && inviteLib.verifyGrant(teamSecret, payload.grant, payload.grantSig)) {
+      const g = payload.grant;
+      const rec = activeGrants().find((x) => x.id === g.id);
+      if (!rec) return reply({ ok: false, error: 'revoked' });
+      const sid = nodeCrypto.randomBytes(12).toString('base64url');
+      const pids = new Set(g.p.map(String));
+      teamBindings.set(from, { pids, write: !!g.w, name, sid, grantId: g.id });
+      subscribers.set(from, { pids, write: !!g.w });
+      return reply({ ok: true, sid, pids: [...pids], write: !!g.w });
+    }
+    return reply({ ok: false, error: 'invalid' });
+  }
+  if (!isShare && teamSecret) {
+    const bound = teamBindings.get(from);
+    const sidOk = !!(bound && payload && payload.__sid === bound.sid);
+    if (bound && sidOk) {
+      subscribers.set(from, { pids: bound.pids, write: bound.write });
+      if (bound.pids !== null) {
+        // Convidado com escopo: MESMA régua default-deny do share guest.
+        if (OWNER_ONLY_CHANNELS.has(channel)) return fail('acesso-negado');
+        const allow = bound.write ? SHARE_WRITE_CHANNELS : SHARE_READ_CHANNELS;
+        if (!allow.has(channel)) return fail('acesso-negado');
+        const targetPid = (payload && (payload.projectId || payload.id)) || null;
+        if (channel !== 'projects.list' && targetPid && !bound.pids.has(targetPid)) return fail('acesso-negado');
+        if (channel === 'projects.list') return reply(safeProjects().filter((p) => bound.pids.has(p.id)));
+      }
+    } else if (activeGrants().length > 0) {
+      // A sala TEM convites com escopo → device sem hello verificado não é
+      // mais tratado como "da casa". ping passa (health-check), o resto exige
+      // hello — inclusive os devices do dono, que provam com o fullMac.
+      if (channel === 'ping') return reply({ ok: true, helloRequired: true });
+      if (channel === 'projects.list') return reply([]);
+      return fail('team-hello-required');
+    } else {
+      subscribers.set(from, { pids: null, write: true });   // sala sem escopos: como sempre
+    }
+  }
+
   // Escopo de projetos: membro = todos (null); guest com pids = subset; guest
   // sem pids = nenhum (Set vazio); dono (sem claim) = todos (null).
   const allowedPids = isGuest
     ? (Array.isArray(shareClaims.pids) && shareClaims.pids.length > 0 ? new Set(shareClaims.pids) : new Set())
     : null;
   const canWrite = !isShare || shareClaims.p === 'write';
-  subscribers.set(from, { pids: allowedPids, write: canWrite });
+  if (isShare || !teamSecret) subscribers.set(from, { pids: allowedPids, write: canWrite });
 
   // Canais globais da conta: negados a QUALQUER não-dono (guest E membro).
   if (isShare && OWNER_ONLY_CHANNELS.has(channel)) return fail('acesso-negado');
@@ -685,6 +759,7 @@ function start(opts) {
       if (f.online === false) {
         subscribers.delete(f.deviceId);
         peers.delete(f.deviceId);
+        teamBindings.delete(f.deviceId);
       } else if (f.role === 'client') {
         // Roster da equipe: colega entrou na sala. Alimenta o "quem está aqui"
         // do dono sem nenhuma chamada extra.
@@ -749,6 +824,7 @@ function stop() {
   unsub = null;
   subscribers.clear();
   peers.clear();
+  teamBindings.clear();
   try { link && link.close(); } catch {}
   link = null;
   state = { running: false, status: 'idle', error: null };
@@ -784,4 +860,5 @@ function setOnState(fn) { onState = fn; }
 // pra decidir se manda web push quando ninguém está olhando).
 function subscriberCount() { return subscribers.size; }
 
-module.exports = { start, stop, refreshProjects, updateToken, getState, isHealthy, setOnState, broadcastProjectPatch, subscriberCount };
+module.exports = {
+  setTeamSecret, start, stop, refreshProjects, updateToken, getState, isHealthy, setOnState, broadcastProjectPatch, subscriberCount };

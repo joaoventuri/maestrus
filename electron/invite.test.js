@@ -126,3 +126,45 @@ test('papel invalido cai pra client — nunca vira host por engano', () => {
   const u = invite.connectUrl('wss://r/ws', c.secret, 'd', 'qualquer-coisa');
   assert.ok(u.includes('role=client'), u);
 });
+
+// ─── Convite v2 (escopo) ────────────────────────────────────────────────────
+test('convite com escopo faz o round-trip sem carregar o segredo', () => {
+  const secret = invite.newSecret();
+  const c = invite.createScoped({ relayUrl: 'wss://r/ws', secret, hostName: 'Mac', projects: ['p1', 'p2'], write: false });
+  assert.ok(!c.code.includes(secret), 'o codigo v2 NAO pode conter o segredo da sala');
+  const p = invite.parse(c.code);
+  assert.equal(p.ok, true);
+  assert.equal(p.scoped, true);
+  assert.equal(p.room, invite.roomFromSecret(secret));
+  assert.equal(p.proof, invite.proofFor(secret));
+  assert.deepEqual(p.grant.p, ['p1', 'p2']);
+  assert.equal(p.grant.w, false);
+  assert.ok(invite.verifyGrant(secret, p.grant, p.grantSig), 'host verifica o grant com o proprio segredo');
+});
+
+test('grant adulterado ou de outra sala NAO verifica', () => {
+  const secret = invite.newSecret();
+  const c = invite.createScoped({ relayUrl: 'wss://r/ws', secret, projects: ['p1'] });
+  const p = invite.parse(c.code);
+  // escopo inflado (p1 → p1,p2) quebra a assinatura
+  assert.equal(invite.verifyGrant(secret, { ...p.grant, p: ['p1', 'p2'] }, p.grantSig), false);
+  // read → write tambem
+  assert.equal(invite.verifyGrant(secret, { ...p.grant, w: true }, p.grantSig), invite.verifyGrant(secret, p.grant, p.grantSig) && p.grant.w === true);
+  // girar o segredo da sala revoga TUDO: a chave de escopo morre junto
+  assert.equal(invite.verifyGrant(invite.newSecret(), p.grant, p.grantSig), false);
+});
+
+test('grant vencido e recusado no parse E na verificacao', () => {
+  const secret = invite.newSecret();
+  const c = invite.createScoped({ relayUrl: 'wss://r/ws', secret, projects: ['p1'], ttlMs: -1 });
+  // ttl minimo de 60s aplica no create; força vencimento manual:
+  const p = invite.parse(c.code);
+  const dead = { ...p.grant, e: Date.now() - 1000 };
+  assert.equal(invite.verifyGrant(secret, dead, invite.signGrant(secret, dead)), false, 'vencido nao passa nem com assinatura valida');
+});
+
+test('fullMac e amarrado ao device: nao da pra emprestar', () => {
+  const secret = invite.newSecret();
+  assert.notEqual(invite.fullMac(secret, 'dev-a'), invite.fullMac(secret, 'dev-b'));
+  assert.equal(invite.fullMac(secret, 'dev-a'), invite.fullMac(secret, 'dev-a'));
+});

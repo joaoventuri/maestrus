@@ -12,7 +12,7 @@ describe('convite: browser e desktop falam o mesmo protocolo', () => {
     const c = invite.create({ relayUrl: 'wss://r/ws', hostName: 'Mac da sala' });
     const p = parseInvite(c.code);
     expect(p.ok).toBe(true);
-    if (!p.ok) return;
+    if (!p.ok || p.scoped) return;
     expect(p.secret).toBe(c.secret);
     expect(p.relayUrl).toBe('wss://r/ws');
     expect(p.hostName).toBe('Mac da sala');
@@ -35,7 +35,7 @@ describe('convite: browser e desktop falam o mesmo protocolo', () => {
     for (const form of [invite.toUrl(c.code), `https://exemplo/x?c=${c.code}`, c.code]) {
       const p = parseInvite(form);
       expect(p.ok).toBe(true);
-      if (p.ok) expect(p.secret).toBe(c.secret);
+      if (p.ok && !p.scoped) expect(p.secret).toBe(c.secret);
     }
   });
 
@@ -54,5 +54,26 @@ describe('convite: browser e desktop falam o mesmo protocolo', () => {
     const c = invite.create({ relayUrl: 'wss://r/ws', hostName: 'Máquina do João — sala 2' });
     const p = parseInvite(c.code);
     expect(p.ok && p.hostName).toBe('Máquina do João — sala 2');
+  });
+});
+
+describe('convite v2 (escopo): browser lê o que o desktop emitiu', () => {
+  it('round-trip: room/proof/grant chegam intactos e SEM o segredo', async () => {
+    const secret = invite.newSecret();
+    const c = invite.createScoped({ relayUrl: 'wss://r/ws', secret, hostName: 'Mac', projects: ['p1', 'p9'], write: false });
+    expect(c.code.includes(secret)).toBe(false);
+    const p = parseInvite(c.code);
+    expect(p.ok && (p as any).scoped).toBe(true);
+    if (!p.ok || !p.scoped) return;
+    expect(p.room).toBe(invite.roomFromSecret(secret));
+    expect(p.proof).toBe(invite.proofFor(secret));
+    expect(p.grant.p).toEqual(['p1', 'p9']);
+    expect(invite.verifyGrant(secret, p.grant, p.grantSig)).toBe(true);
+  });
+
+  it('fullMac do browser bate com o do desktop (é a prova de casa do hello)', async () => {
+    const { fullMac } = await import('./invite-web');
+    const secret = invite.newSecret();
+    expect(await fullMac(secret, 'dev-1')).toBe(invite.fullMac(secret, 'dev-1'));
   });
 });
