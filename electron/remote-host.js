@@ -355,11 +355,15 @@ const OWNER_ONLY_CHANNELS = new Set([
 ]);
 
 // Um subscriber (entry do Map) pode receber evento/RPC deste projeto?
+// Sub-conversa (fork) chega como `<pid>#<convId>` — o escopo é do PROJETO:
+// quem vê o projeto vê todas as conversas dele. Comparar o id exato negava
+// qualquer fork pro convidado (e a negativa virava timeout na tela).
+function basePid(pid) { const s = String(pid || ''); const i = s.indexOf('#'); return i > 0 ? s.slice(0, i) : s; }
 function subCanSeePid(entry, pid) {
   if (!entry) return false;
   if (entry.pids === null) return true;        // acesso total (dono/membro)
   if (!pid || pid === '*') return false;       // evento global → só acesso total
-  return entry.pids.has(pid);
+  return entry.pids.has(basePid(pid));
 }
 
 // Caminho de destino de um anexo: dentro de .maestrus/uploads DO PROJETO (assim
@@ -464,7 +468,7 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
         const allow = bound.write ? SHARE_WRITE_CHANNELS : SHARE_READ_CHANNELS;
         if (!teamAiSelf && !allow.has(channel)) return fail('acesso-negado');
         const targetPid = (payload && (payload.projectId || payload.id)) || null;
-        if (channel !== 'projects.list' && targetPid && !bound.pids.has(targetPid)) return fail('acesso-negado');
+        if (channel !== 'projects.list' && targetPid && !bound.pids.has(basePid(targetPid))) return fail('acesso-negado');
         if (channel === 'projects.list') return reply(safeProjects().filter((p) => bound.pids.has(p.id)));
       }
     } else if (!viaTeamRoom) {
@@ -502,7 +506,7 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
     const allow = canWrite ? SHARE_WRITE_CHANNELS : SHARE_READ_CHANNELS;
     if (!allow.has(channel)) return fail('acesso-negado');
     const targetPid = (payload && (payload.projectId || payload.id)) || null;
-    if (channel !== 'projects.list' && targetPid && !allowedPids.has(targetPid)) {
+    if (channel !== 'projects.list' && targetPid && !allowedPids.has(basePid(targetPid))) {
       return fail('acesso-negado');
     }
     if (channel === 'projects.list') {
