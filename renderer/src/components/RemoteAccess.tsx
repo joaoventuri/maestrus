@@ -100,7 +100,7 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
   async function aiBindExisting(profileId: string) {
     if (!aiCfg) return;
     const st = await inviteApi?.aiAdmin?.('bindExisting', aiCfg.grant.id, aiCfg.grant.hostId, profileId).catch(() => null);
-    if (st?.ok) { setAiCfg({ ...aiCfg, st }); loadShare(); }
+    if (st?.ok) { setAiCfg({ ...aiCfg, st, profiles: (aiCfg.profiles || []).filter((p: any) => p.id !== profileId) }); loadShare(); }
   }
   async function aiLoginStart() {
     if (!aiCfg) return;
@@ -128,9 +128,11 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
     if (!aiCfg?.code?.trim()) return;
     await inviteApi?.aiAdmin?.('loginCode', aiCfg.grant.id, aiCfg.grant.hostId, aiCfg.code.trim()).catch(() => {});
   }
-  async function aiUnbind() {
-    await inviteApi?.aiAdmin?.('unbind', aiCfg.grant.id, aiCfg.grant.hostId).catch(() => {});
-    setAiCfg(null); loadShare();
+  async function aiUnbind(profileId?: string) {
+    const st = await inviteApi?.aiAdmin?.('unbind', aiCfg.grant.id, aiCfg.grant.hostId, profileId || '').catch(() => null);
+    const lp = await inviteApi?.aiAdmin?.('listProfiles', aiCfg.grant.id, aiCfg.grant.hostId).catch(() => null);
+    setAiCfg((c: any) => c ? { ...c, st, profiles: (lp?.profiles || []).filter((p: any) => p.email && !p.teamBound) } : c);
+    loadShare();
   }
 
   async function revokeGrant(g: any) {
@@ -501,14 +503,21 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                         </button>
                       </div>
                     </>
-                  ) : aiCfg.st?.bound && aiCfg.st?.loggedIn ? (
-                    <>
-                      <div className="cloud-hint">{t('team.aiMine')} <strong>{aiCfg.st.email || '—'}</strong></div>
-                      <button className="cloud-logout" style={{ width: 'auto' }} onClick={aiUnbind}><Trash2 size={13} /> {t('team.aiUseHost')}</button>
-                    </>
                   ) : (
                     <>
-                      <div className="cloud-hint">{t('team.aiHost')}</div>
+                      {(aiCfg.st?.accounts || []).length === 0
+                        ? <div className="cloud-hint">{t('team.aiHost')}</div>
+                        : (
+                          <div className="share-ai-pool">
+                            {(aiCfg.st.accounts as any[]).map((a) => (
+                              <div key={a.id} className="share-grant">
+                                <span className="share-grant-label"><UserRound size={13} /> {a.email || '—'}{!a.loggedIn && <em> · {t('team.aiPending')}</em>}</span>
+                                <button className="dev-del" title={t('team.aiRemove')} onClick={() => aiUnbind(a.id)}><Trash2 size={13} /></button>
+                              </div>
+                            ))}
+                            {(aiCfg.st.accounts as any[]).length > 1 && <div className="cloud-hint">{t('team.aiPoolHint')}</div>}
+                          </div>
+                        )}
                       {aiCfg.profiles?.length > 0 && (
                         <div className="share-ai-reuse">
                           <div className="share-pick-h">{t('team.aiReuse')}</div>
@@ -520,7 +529,7 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                         </div>
                       )}
                       <button className="cloud-submit" style={{ maxWidth: 320 }} onClick={aiLoginStart}>
-                        <UserRound size={14} /> {t('team.aiCfgConnect')}
+                        <UserRound size={14} /> {(aiCfg.st?.accounts || []).length ? t('team.aiAddNew') : t('team.aiCfgConnect')}
                       </button>
                     </>
                   )}
@@ -533,8 +542,9 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                   {grants.map((g) => (
                     <div key={g.id} className="share-grant">
                       <span className="share-grant-label">
+                        {g.email ? <strong>{g.email} · </strong> : null}
                         {(g.p || []).slice(0, 3).map(nameOf).join(', ')}{(g.p || []).length > 3 ? ` +${g.p.length - 3}` : ''}
-                        <em> · {g.w ? t('team.shareWrite') : t('team.shareRead')} · {g.aiBound ? t('team.aiOwn') : t('team.aiHostShort')}</em>
+                        <em> · {g.w ? t('team.shareWrite') : t('team.shareRead')} · {g.aiBound ? (g.aiCount > 1 ? t('team.aiPoolShort', { n: g.aiCount }) : t('team.aiOwn')) : t('team.aiHostShort')}</em>
                       </span>
                       <button className="dev-del" title={t('team.aiCfg')} onClick={() => openAiCfg(g)}><UserRound size={13} /></button>
                       <button className="dev-del" title={t('team.shareRevoke')} onClick={() => revokeGrant(g)}><Trash2 size={13} /></button>

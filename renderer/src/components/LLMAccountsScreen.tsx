@@ -31,7 +31,8 @@ export default function LLMAccountsScreen({ onOpenSharing }: { onOpenSharing?: (
       // e-mail da conta de cada acesso (best-effort, em paralelo)
       const pairs = await Promise.all(gs.filter((g: any) => g.aiBound).map(async (g: any) => {
         const st = await inviteApi?.aiAdmin?.('status', g.id, g.hostId).catch(() => null);
-        return [g.id, st?.email || ''] as const;
+        const emails = (st?.accounts || []).map((a: any) => a.email).filter(Boolean);
+        return [g.id, emails.length ? emails.join(' + ') : (st?.email || '')] as const;
       }));
       setAiEmails(Object.fromEntries(pairs.filter(([, e]) => e)));
     }).catch(() => setGrants([]));
@@ -75,6 +76,7 @@ export default function LLMAccountsScreen({ onOpenSharing }: { onOpenSharing?: (
                 <div key={g.id} className="llm-team-row">
                   <UserRound size={14} />
                   <span className="llm-team-projects">
+                    {g.email ? <strong>{g.email} · </strong> : null}
                     {(g.p || []).slice(0, 3).map((pid: string) => projNames[pid] || pid.slice(0, 8)).join(', ')}
                     {(g.p || []).length > 3 ? ` +${g.p.length - 3}` : ''}
                   </span>

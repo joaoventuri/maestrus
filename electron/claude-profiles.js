@@ -122,7 +122,8 @@ function teamBoundIds() {
   // do dono por engano (era o pedido do "bloqueia no meu").
   try {
     const projectStore = require('./project-store');
-    return new Set(Object.values(projectStore.getSetting('team_ai_profiles') || {}));
+    // valor = string (uma conta) ou array (pool de contas do acesso)
+    return new Set(Object.values(projectStore.getSetting('team_ai_profiles') || {}).flat().filter(Boolean));
   } catch { return new Set(); }
 }
 
@@ -286,8 +287,12 @@ function loginState() {
 function loginCode(code) { return claudeAuth.submitCode(code); }
 function loginCancel() { claudeAuth.cancelLogin(); _login.active = false; return { ok: true }; }
 
+// Tem credencial gravada? (síncrono; usado pelo host pra saber se um perfil
+// "Equipe" ainda está com login pendente.)
+function hasCredentials(id) { try { return !!oauthCredsFor(id); } catch { return false; } }
+
 module.exports = {
-  oauthCredsFor,
+  oauthCredsFor, hasCredentials,
   DEFAULT_ID, list, getActive, setActive, create, remove,
   envVars, configDir, claudeJsonPath, ensureProfileDir, status,
   loginStart, loginState, loginCode, loginCancel,

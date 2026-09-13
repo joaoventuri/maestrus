@@ -823,7 +823,7 @@ async function connectInvite(relayUrl: string, conn: any, name: string | null): 
   return { ok: true, hostName };
 }
 
-async function joinInvite(code: string): Promise<any> {
+async function joinInvite(code: string, shareGrantId: string | null = null): Promise<any> {
   const p = parseInvite(code);
   if (!p.ok) return { ok: false, error: p.error };
   const conn = p.scoped ? { room: p.room, proof: p.proof } : { secret: p.secret };
@@ -834,7 +834,7 @@ async function joinInvite(code: string): Promise<any> {
   if (r.ok) {
     try {
       localStorage.setItem(LS_INVITE, JSON.stringify(p.scoped
-        ? { relayUrl: p.relayUrl, room: p.room, proof: p.proof, grant: p.grant, grantSig: p.grantSig, hostName: r.hostName, ts: Date.now() }
+        ? { relayUrl: p.relayUrl, room: p.room, proof: p.proof, grant: p.grant, grantSig: p.grantSig, hostName: r.hostName, shareGrantId: shareGrantId || undefined, ts: Date.now() }
         : { relayUrl: p.relayUrl, secret: p.secret, hostName: r.hostName, ts: Date.now() }));
     } catch {}
   }
@@ -963,17 +963,36 @@ async function ensureConnected(): Promise<any> {
   _connectFlight = ensureConnectedInner().finally(() => { _connectFlight = null; });
   return _connectFlight;
 }
-// Convites POR E-MAIL pendentes na conta: alguém compartilhou conversas com
-// este e-mail — entra sozinho na sala e marca como entregue. É o que faz o
-// "compartilhei com fulano@" virar "apareceu pra ele quando logou".
+// Acessos compartilhados COM ESTA CONTA (por e-mail): assinatura, não entrega
+// única. Em todo load: sai do acesso revogado (some da lista sem a pessoa
+// fazer nada) e entra no ativo mais recente se não estou em nenhuma sala.
+function shareGrantIdOf(sh: any): string | null {
+  if (sh && sh.grant_id) return String(sh.grant_id);
+  try { const p = parseInvite(sh.code); return p.ok && p.scoped && p.grant ? String(p.grant.id) : null; } catch { return null; }
+}
 async function claimEmailShares(): Promise<boolean> {
   const a = getAccount(); if (!a) return false;
   try {
     const r = await api('team_share', { license_key: a.licenseKey, op: 'list' });
-    const first = r && r.ok && Array.isArray(r.shares) && r.shares[0];
+    if (!(r && r.ok && Array.isArray(r.shares))) return false;
+    const active = r.shares.filter((sh: any) => sh && sh.code);
+    const activeIds = new Set(active.map(shareGrantIdOf).filter(Boolean));
+    const cur = savedInvite();
+    if (cur && cur.shareGrantId && !activeIds.has(String(cur.shareGrantId))) {
+      _activeInviteCred = null;
+      try { localStorage.removeItem(LS_INVITE); } catch {}
+      try { link?.close(); } catch {}
+      link = null; hostId = null; cachedProjects = [];
+      clientState = { connected: false, status: 'idle', hostName: null }; emitClientState(); emitProjectsChanged();
+    }
+    if (savedInvite()) return false;
+    const first = active[0];
     if (!first || !first.code) return false;
-    const j = await joinInvite(first.code);
-    if (j && j.ok) { api('team_share', { license_key: a.licenseKey, op: 'claim', id: first.id }).catch(() => {}); return true; }
+    const j = await joinInvite(first.code, shareGrantIdOf(first));
+    if (j && j.ok) {
+      if (!first.claimed_at) api('team_share', { license_key: a.licenseKey, op: 'claim', id: first.id }).catch(() => {});
+      return true;
+    }
   } catch {}
   return false;
 }
@@ -981,13 +1000,13 @@ async function claimEmailShares(): Promise<boolean> {
 async function ensureConnectedInner(): Promise<any> {
   // Convite salvo vem primeiro: quem pareou assim pode não ter conta nenhuma,
   // e mesmo tendo, a sala que ele escolheu não pode ser trocada por discovery.
+  // Acesso por e-mail primeiro: derruba o revogado e entra no ativo. Com conta
+  // logada isto é barato (uma chamada) e é o que faz "revoguei" valer aqui.
+  if (getAccount() && await claimEmailShares()) return { ok: true, via: 'email-share' };
   if (savedInvite()) {
     const r = await resumeInvite();
     if (r.ok) return { ok: true, via: 'invite' };
   }
-  // Sem sala salva: antes de procurar máquinas próprias, vê se alguém me
-  // compartilhou conversas por e-mail.
-  if (!savedInvite() && await claimEmailShares()) return { ok: true, via: 'email-share' };
   const a = getAccount(); if (!a) return { ok: false };
   const saved = loadSavedRemote();
   // Sem pareamento salvo → tenta discovery direto (pega máquina online OU o

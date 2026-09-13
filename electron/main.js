@@ -1650,7 +1650,7 @@ ipcMain.handle('cloud:login', async (_e, { email, password }) => {
   const r = await cloud.activate(email, password);
   // Logou → materializa a config global do DB (Skills + MCP) na hora, pra ficar
   // igual ao que o usuário tem no web/PWA e nos outros devices. Não bloqueia.
-  if (r && r.ok) { materializeCloudSkills().catch(() => {}); materializeCloudMcp().catch(() => {}); maybeAutoHost(); }
+  if (r && r.ok) { materializeCloudSkills().catch(() => {}); syncEmailShares().catch(() => {}); materializeCloudMcp().catch(() => {}); maybeAutoHost(); }
   return r;
 });
 ipcMain.handle('cloud:validate', async () => cloud.validate());
@@ -1906,10 +1906,10 @@ ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
     const hostId = [...dids][0];
     const shortIds = remotes.map((id) => id.split(':').slice(2).join(':'));
     try {
-      const r = await remoteClient.teamCreateScoped(hostId, { projects: shortIds, write: opts.write !== false, ttlMs: opts.ttlMs });
+      const r = await remoteClient.teamCreateScoped(hostId, { projects: shortIds, write: opts.write !== false, ttlMs: opts.ttlMs, email: opts.email ? String(opts.email) : undefined });
       if (!(r && r.ok)) return { ok: false, error: (r && r.error) || 'host_failed' };
       if (opts.email && r.code) {
-        const es = await cloud.teamShare('create', { email: String(opts.email), code: r.code, host_name: 'host' });
+        const es = await cloud.teamShare('create', { email: String(opts.email), code: r.code, host_name: 'host', grant_id: r.grantId });
         r.emailSent = !!(es && es.ok);
         if (!r.emailSent) r.emailError = (es && es.error) || 'send_failed';
       }
@@ -1932,7 +1932,7 @@ ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
   // Registro do grant: é o que permite REVOGAR um convite sem girar a sala.
   try {
     const all = projectStore.getSetting('invite_grants') || [];
-    all.push({ id: sc.grantId, p: projects, w: opts.write !== false, e: sc.expiresAt, label: String(opts.label || '').slice(0, 60), createdAt: Date.now() });
+    all.push({ id: sc.grantId, p: projects, w: opts.write !== false, e: sc.expiresAt, label: String(opts.label || '').slice(0, 60), email: opts.email ? String(opts.email).slice(0, 190) : undefined, createdAt: Date.now() });
     projectStore.setSetting('invite_grants', all);
   } catch {}
   const webBase = `${require('./config').BASE}/app`;
@@ -1940,7 +1940,7 @@ ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
   // E-mail: o backend guarda o código como caixa de entrada — quando a pessoa
   // logar em qualquer superfície, o app dela entra sozinho na sala.
   if (opts.email) {
-    const es = await cloud.teamShare('create', { email: String(opts.email), code: sc.code, host_name: require('os').hostname() });
+    const es = await cloud.teamShare('create', { email: String(opts.email), code: sc.code, host_name: require('os').hostname(), grant_id: sc.grantId });
     out.emailSent = !!(es && es.ok);
     if (!out.emailSent) out.emailError = (es && es.error) || 'send_failed';
   }
@@ -1950,7 +1950,7 @@ ipcMain.handle('invite:grants', async () => {
   const _aiMap = (() => { try { return projectStore.getSetting('team_ai_profiles') || {}; } catch { return {}; } })();
   const grants = (projectStore.getSetting('invite_grants') || [])
     .filter((g) => g && !g.revoked)
-    .map((g) => ({ ...g, aiBound: !!_aiMap['g:' + g.id] }));
+    .map((g) => { const v = _aiMap['g:' + g.id]; const n = Array.isArray(v) ? v.filter(Boolean).length : (v ? 1 : 0); return { ...g, aiBound: n > 0, aiCount: n }; });
   // Sendo client: soma os grants dos hosts conectados (com o dono do grant
   // marcado, pra revogação ir pro lugar certo).
   // Hosts em PARALELO e com teto curto: um host fantasma na lista segurava a
@@ -1980,6 +1980,9 @@ ipcMain.handle('invite:aiAdmin', async (_e, { op, grantId, hostId, code }) => {
   catch (e) { return { ok: false, error: String(e && e.message || e) }; }
 });
 ipcMain.handle('invite:revokeGrant', async (_e, id, hostId) => {
+  // A entrega por e-mail morre junto: o próximo sync em qualquer device da
+  // pessoa tira o acesso da lista (o host já cortou quem estava dentro).
+  try { if (cloud.getAccount && cloud.getAccount()) cloud.teamShare('revoke_grant', { grant_id: String(id) }).catch(() => {}); } catch {}
   if (hostId) {
     try { return await remoteClient.teamRevokeGrant(hostId, id); } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
   }
@@ -2010,16 +2013,19 @@ function startClientViaInviteRaw(room, proof) {
   const url = withName(`${base}${base.includes('?') ? '&' : '?'}${invite.connectQueryRaw(room, proof, did, 'client')}`);
   return remoteClient.startDiscovery({ url, token: '', deviceId: did });
 }
-function joinInvite(code) {
+function joinInvite(code, { viaEmail = false } = {}) {
   const p = invite.parse(code);
   if (!p.ok) return { ok: false, error: p.error };
   const r = p.scoped ? startClientViaInviteRaw(p.room, p.proof) : startClientViaInvite(p.secret);
   if (!r || r.ok === false) return { ok: false, error: (r && r.error) || 'connect_failed' };
   try {
     projectStore.setSetting('invite_client', p.scoped
-      ? { room: p.room, proof: p.proof, relayUrl: p.relayUrl, hostName: p.hostName, grant: p.grant, grantSig: p.grantSig }
+      ? { room: p.room, proof: p.proof, relayUrl: p.relayUrl, hostName: p.hostName, grant: p.grant, grantSig: p.grantSig, shareGrantId: viaEmail && p.grant ? String(p.grant.id) : undefined }
       : { secret: p.secret, room: p.room, relayUrl: p.relayUrl, hostName: p.hostName });
-    projectStore.setSetting('app_mode', 'client');
+    // Colar um código é "quero ser client desta máquina". Já o acesso que
+    // chegou pela CONTA (e-mail) só soma projetos à lista — quem tem o próprio
+    // host continua host, com as conversas do dono ao lado das suas.
+    if (!viaEmail) projectStore.setSetting('app_mode', 'client');
   } catch {}
   remoteClient.setTeamHello(buildTeamHello);
   return { ok: true, room: p.room, hostName: p.hostName, scoped: !!p.scoped };
@@ -2056,22 +2062,40 @@ ipcMain.handle('invite:leave', async () => {
 // No boot: reata as duas pontas se houver convite salvo. É o que faz o
 // pareamento sobreviver a fechar o app — sem isso o usuário coleta código de
 // novo toda vez.
-// Convites por E-MAIL pendentes na conta: entra sozinho no mais recente e
-// marca como entregue. É o "compartilhei com fulano@ e apareceu pra ele".
-async function claimEmailShares() {
+// Acessos compartilhados COM ESTA CONTA (por e-mail): é uma assinatura, não
+// uma entrega única. Todo boot/login e a cada poucos minutos: entra no acesso
+// ativo mais recente se ainda não estou em nenhum, e SAI do que foi revogado
+// — some da lista em todo device da pessoa, sem ela fazer nada.
+function shareGrantIdOf(sh) {
+  if (sh && sh.grant_id) return String(sh.grant_id);
+  try { const p = invite.parse(sh.code); return p.ok && p.scoped && p.grant ? String(p.grant.id) : null; } catch { return null; }
+}
+async function syncEmailShares() {
   try {
     if (!cloud.getAccount || !cloud.getAccount()) return;
-    if (getInviteClient()) return;                       // já estou numa sala
     const r = await cloud.teamShare('list');
-    const first = r && r.ok && Array.isArray(r.shares) && r.shares[0];
-    if (!first || !first.code) return;
-    const j = joinInvite(first.code);
+    if (!(r && r.ok && Array.isArray(r.shares))) return;
+    const active = r.shares.filter((sh) => sh && sh.code);
+    const activeIds = new Set(active.map(shareGrantIdOf).filter(Boolean));
+    const cur = getInviteClient();
+    if (cur && cur.shareGrantId && !activeIds.has(String(cur.shareGrantId))) {
+      // O dono revogou (ou trocou) o acesso → esta sala não é mais minha.
+      try { projectStore.setSetting('invite_client', null); } catch {}
+      try { remoteClient.disconnect(); } catch {}
+      try { mainWindow?.webContents.send('invite:left', { grantId: cur.shareGrantId }); } catch {}
+    }
+    if (getInviteClient()) return;                       // já estou numa sala (por código ou por e-mail)
+    const first = active[0];
+    if (!first) return;
+    const j = joinInvite(first.code, { viaEmail: true });
     if (j && j.ok) {
-      await cloud.teamShare('claim', { id: first.id }).catch(() => {});
+      if (!first.claimed_at) await cloud.teamShare('claim', { id: first.id }).catch(() => {});
       try { mainWindow?.webContents.send('invite:joined', j); } catch {}
     }
   } catch {}
 }
+const claimEmailShares = syncEmailShares;   // nome antigo (boot)
+setInterval(() => { syncEmailShares().catch(() => {}); }, 3 * 60 * 1000);
 function resumeInvites() {
   try { const h = getInviteHost(); if (h && h.secret) ensureTeamRoom(); } catch {}
   try {

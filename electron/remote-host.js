@@ -108,11 +108,58 @@ function teamAiKeyFor(from) {
   return bnd && bnd.grantId ? 'g:' + bnd.grantId : 'd:' + from;
 }
 function teamAiMap() { try { return projectStore.getSetting('team_ai_profiles') || {}; } catch { return {}; } }
-function teamAiProfileFor(from) { return teamAiMap()[teamAiKeyFor(from)] || null; }
-function teamAiBind(from, profileId) {
+// Valor do mapa: string (legado, uma conta) ou array (pool). Sempre lê como lista.
+function teamAiPool(key) {
+  const v = teamAiMap()[key];
+  return Array.isArray(v) ? v.filter(Boolean) : (v ? [String(v)] : []);
+}
+function teamAiSetPool(key, pool) {
   const m = teamAiMap();
-  if (profileId) m[teamAiKeyFor(from)] = profileId; else delete m[teamAiKeyFor(from)];
+  if (pool && pool.length) m[key] = pool.length === 1 ? pool[0] : pool; else delete m[key];
   try { projectStore.setSetting('team_ai_profiles', m); } catch {}
+}
+// Uso oficial (5h/semana) por perfil, com cache curto: a escolha da conta do
+// turno não pode custar uma chamada de rede a cada mensagem.
+const _usageCache = new Map();       // profileId → { pct, at, loggedIn }
+const USAGE_TTL = 3 * 60 * 1000;
+function refreshUsage(pid) {
+  const hit = _usageCache.get(pid);
+  if (hit && Date.now() - hit.at < USAGE_TTL) return;
+  _usageCache.set(pid, { pct: hit ? hit.pct : 0, at: Date.now(), loggedIn: hit ? hit.loggedIn : true });
+  (async () => {
+    let pct = 0; let loggedIn = true;
+    try {
+      const u = await require('./usage').real(pid);
+      if (u && u.ok === false && /no_credentials|auth_expired/.test(String(u.error || ''))) loggedIn = false;
+      for (const l of (u && u.limits) || []) pct = Math.max(pct, Number(l.percent) || 0);
+    } catch {}
+    _usageCache.set(pid, { pct, at: Date.now(), loggedIn });
+  })();
+}
+let _rr = 0;
+// A conta que roda o turno de um device da equipe: SEMPRE a que o dono fixou
+// no acesso (grant). Com mais de uma no pool, a menos consumida no momento —
+// invisível pra quem usa. Sem pool → conta ativa do host (null).
+function teamAiProfileFor(from) {
+  const bnd = teamBindings.get(from);
+  const pool = bnd && bnd.grantId ? teamAiPool('g:' + bnd.grantId) : [];
+  if (!pool.length) return null;
+  if (pool.length === 1) return pool[0];
+  for (const pid of pool) refreshUsage(pid);
+  const live = pool.filter((pid) => { const c = _usageCache.get(pid); return !c || c.loggedIn !== false; });
+  const cands = live.length ? live : pool;
+  let best = null; let bestPct = Infinity;
+  for (const pid of cands) {
+    const c = _usageCache.get(pid); const pct = c ? c.pct : 0;
+    if (pct < bestPct) { best = pid; bestPct = pct; }
+  }
+  // Empate (ninguém consumiu ainda): alterna, pra não viciar numa só.
+  if (cands.every((pid) => { const c = _usageCache.get(pid); return !c || c.pct === bestPct; })) return cands[(_rr++) % cands.length];
+  return best;
+}
+function teamAiBind(from, profileId) {
+  const key = teamAiKeyFor(from);
+  teamAiSetPool(key, profileId ? [profileId] : []);
 }
 
 // Admin da IA de um GRANT: o dono configura a conta do Claude que o TIME
@@ -141,22 +188,32 @@ function dropGrantBindings(grantId) {
 async function teamAiAdmin(op, grantId, code) {
   const key = 'g:' + String(grantId || '');
   if (!grantId) return { ok: false, error: 'grant_required' };
-  const m = teamAiMap();
-  let prof = m[key] || null;
-  switch (op) {
-    case 'status': {
-      if (!prof) return { ok: true, bound: false };
-      const st = await claudeProfiles.status(prof).catch(() => null);
-      return { ok: true, bound: true, loggedIn: !!(st && st.loggedIn), email: (st && st.email) || null };
+  const pool = teamAiPool(key);
+  // Fluxo de login em andamento pertence ao perfil "Equipe" mais recente do pool.
+  let prof = pool.length ? pool[pool.length - 1] : null;
+  const isTeamProfile = (pid) => { try { return (claudeProfiles.list().profiles.find((x) => x.id === pid) || {}).name?.startsWith('Equipe:'); } catch { return false; } };
+  const statusOf = async () => {
+    const accounts = [];
+    for (const pid of teamAiPool(key)) {
+      const st = await claudeProfiles.status(pid).catch(() => null);
+      accounts.push({ id: pid, email: (st && st.email) || null, loggedIn: !!(st && st.loggedIn) });
     }
+    const first = accounts.find((a) => a.loggedIn) || accounts[0] || null;
+    return { ok: true, bound: accounts.length > 0, accounts, email: first ? first.email : null, loggedIn: accounts.some((a) => a.loggedIn) };
+  };
+  switch (op) {
+    case 'status': return statusOf();
     case 'loginStart': {
-      if (!prof) {
+      // Conta NOVA no pool: cria um perfil "Equipe" e loga nele. Um perfil
+      // Equipe ainda não logado (login abandonado) é reaproveitado.
+      let target = pool.find((pid) => isTeamProfile(pid) && !claudeProfilesLoggedSync(pid));
+      if (!target) {
         const c = claudeProfiles.create(`Equipe: ${String(grantId).slice(0, 8)}`);
         if (!c || !c.ok) return { ok: false, error: 'profile_create_failed' };
-        prof = c.id;
-        m[key] = prof;
-        try { projectStore.setSetting('team_ai_profiles', m); } catch {}
+        target = c.id;
+        teamAiSetPool(key, [...pool, target]);
       }
+      prof = target;
       return claudeProfiles.loginStart(prof);
     }
     case 'loginState': {
@@ -180,11 +237,9 @@ async function teamAiAdmin(op, grantId, code) {
       const pid = String(code || '');           // 3º arg carrega o profileId
       const all = claudeProfiles.list();
       if (!all.profiles.some((x) => x.id === pid)) return { ok: false, error: 'profile_not_found' };
-      m[key] = pid;
-      try { projectStore.setSetting('team_ai_profiles', m); } catch {}
+      if (!pool.includes(pid)) teamAiSetPool(key, [...pool, pid]);
       try { if (claudeProfiles.getActive() === pid) claudeProfiles.setActive('default', { force: true }); } catch {}
-      const st = await claudeProfiles.status(pid).catch(() => null);
-      return { ok: true, bound: true, loggedIn: !!(st && st.loggedIn), email: (st && st.email) || null };
+      return statusOf();
     }
     case 'listProfiles': {
       // Contas desta máquina, pra UI oferecer o reaproveitamento.
@@ -192,15 +247,24 @@ async function teamAiAdmin(op, grantId, code) {
       return { ok: true, active: all.active, profiles: all.profiles };
     }
     case 'unbind': {
-      delete m[key];
-      try { projectStore.setSetting('team_ai_profiles', m); } catch {}
-      if (prof) { try { claudeProfiles.remove(prof); } catch {} }
-      return { ok: true };
+      // 3º arg = profileId a tirar do pool; vazio = esvazia. Só APAGA o perfil
+      // se ele nasceu para a equipe ("Equipe: …") — uma conta do dono
+      // reaproveitada volta a ser dele, não some da máquina.
+      const one = String(code || '');
+      const drop = one ? pool.filter((pid) => pid === one) : pool;
+      teamAiSetPool(key, one ? pool.filter((pid) => pid !== one) : []);
+      for (const pid of drop) { if (isTeamProfile(pid)) { try { claudeProfiles.remove(pid); } catch {} } }
+      return statusOf();
     }
     default: return { ok: false, error: 'bad_op' };
   }
 }
 
+// Perfil já tem credencial gravada? (síncrono, sem rede) — pra reaproveitar um
+// perfil Equipe cujo login foi abandonado em vez de criar outro.
+function claudeProfilesLoggedSync(pid) {
+  try { return !!(claudeProfiles.hasCredentials && claudeProfiles.hasCredentials(pid)); } catch { return false; }
+}
 function timingEq(a, b) {
   const ba = Buffer.from(String(a || '')); const bb = Buffer.from(String(b || ''));
   return ba.length === bb.length && nodeCrypto.timingSafeEqual(ba, bb);
@@ -539,10 +603,12 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
       }
       // ─── IA por participante: plugar/usar a PRÓPRIA conta do Claude ─────
       case 'team.ai.status': {
+        // Só informativo: a conta é a que o DONO fixou no acesso. O convidado
+        // não pluga conta própria (o modelo é "quem entra usa a conta do dono").
         const prof = teamAiProfileFor(from);
-        if (!prof) return reply({ ok: true, bound: false });
+        if (!prof) return reply({ ok: true, bound: false, ownerManaged: true });
         const st = await claudeProfiles.status(prof).catch(() => null);
-        return reply({ ok: true, bound: true, loggedIn: !!(st && st.loggedIn), email: (st && st.email) || null });
+        return reply({ ok: true, bound: true, ownerManaged: true, loggedIn: !!(st && st.loggedIn), email: (st && st.email) || null });
       }
       case 'team.ai.loginStart': {
         let prof = teamAiProfileFor(from);
@@ -620,16 +686,15 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
         } catch (e) { return fail(String(e && e.message || e)); }
         try {
           const all = projectStore.getSetting('invite_grants') || [];
-          all.push({ id: sc.grantId, p: projects, w: payload.write !== false, e: sc.expiresAt, createdAt: Date.now() });
+          all.push({ id: sc.grantId, p: projects, w: payload.write !== false, e: sc.expiresAt, email: String(payload.email || '').slice(0, 190) || undefined, createdAt: Date.now() });
           projectStore.setSetting('invite_grants', all);
         } catch {}
         return reply({ ok: true, code: sc.code, grantId: sc.grantId, expiresAt: sc.expiresAt, url: `${require('./config').BASE}/app#c=${sc.code}` });
       }
       case 'team.grants': {
-        const m = teamAiMap();
         const all = (projectStore.getSetting('invite_grants') || [])
           .filter((g) => g && !g.revoked)
-          .map((g) => ({ ...g, aiBound: !!m['g:' + g.id] }));
+          .map((g) => ({ ...g, aiBound: teamAiPool('g:' + g.id).length > 0, aiCount: teamAiPool('g:' + g.id).length }));
         return reply({ ok: true, grants: all });
       }
       case 'team.revokeGrant': {
