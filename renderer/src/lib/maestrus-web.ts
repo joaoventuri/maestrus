@@ -1363,7 +1363,7 @@ export function installMaestrusWeb() {
     },
     invite: {
       create: async () => ({ ok: false, error: 'desktop_only' }),
-      state: async () => { const i = savedInvite(); return { ok: true, relayUrl: i?.relayUrl || '', hashJoin: _hashJoin, host: null, client: i ? { room: i.room || '', hostName: i.hostName || null, relayUrl: i.relayUrl } : null }; },
+      state: async () => { const i = savedInvite(); return { ok: true, relayUrl: i?.relayUrl || '', hashJoin: _hashJoin, host: null, client: i ? { room: i.room || '', hostName: i.hostName || null, relayUrl: i.relayUrl, scoped: !!(i.grant && i.grantSig) } : null }; },
       revoke: async () => ({ ok: true }),
       join: async (code: string) => joinInvite(code),
       leave: async () => {

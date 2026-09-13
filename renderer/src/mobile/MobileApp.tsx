@@ -91,6 +91,9 @@ export default function MobileApp() {
   // convite": deixa quem NÃO tem conta chegar na tela de conexão.
   const [inviteJoined, setInviteJoined] = useState(false);
   const [wantInvite, setWantInvite] = useState(false);
+  // Convidado com escopo: trabalha na conversa do dono, na conta que o dono
+  // definiu. Engine/permissões são do dono — a UI nem oferece.
+  const [guest, setGuest] = useState(false);
   // Link #c=… em andamento: NÃO mostrar Login por cima (o convidado achava que
   // o link exigia conta). joining → spinner; failed → tela de conexão manual.
   const [hashJoin, setHashJoin] = useState<'none' | 'joining' | 'done' | 'failed'>('none');
@@ -102,6 +105,7 @@ export default function MobileApp() {
         if (!alive) return;
         const h = st?.hashJoin || 'none';
         setHashJoin(h);
+        if (st?.client?.scoped) setGuest(true);
         if (h === 'done') setInviteJoined(true);
         if (h === 'failed') setWantInvite(true);
         if (h === 'joining') setTimeout(tick, 500);
@@ -122,6 +126,7 @@ export default function MobileApp() {
       let inv: any = null;
       try { inv = await (M() as any).invite?.state?.(); } catch {}
       if (inv?.client) setInviteJoined(true);
+      if (inv?.client?.scoped) setGuest(true);
       // Mesmo init flow do cold start: pareamento salvo (15d) + fallback discovery.
       if (a || inv?.client) {
         const r = M().remote.ensureConnected || M().remote.resume;
@@ -182,7 +187,7 @@ export default function MobileApp() {
   else if (!client.connected && !everConnectedRef.current) screen = <Connect t={t} onAccount={() => setShowAccount(true)} onLogout={logout} />;
   else if (showKanban) screen = <MobileKanban onBack={() => setShowKanban(false)} projects={projects} />;
   else if (active) screen = <Chat t={t} project={active} onBack={() => setActive(null)}
-    connected={client.connected}
+    connected={client.connected} guest={guest}
     onPatch={(patch: any) => { setActive((p: any) => ({ ...p, ...patch })); setProjects((ps) => ps.map((p) => p.id === active.id ? { ...p, ...patch } : p)); }} />;
   else screen = <Projects t={t} projects={projects} host={client.hostName} onPick={setActive} onAccount={() => setShowAccount(true)}
     onKanban={() => setShowKanban(true)}
@@ -638,7 +643,7 @@ const PERMS: { id: string; icon: any; key: string }[] = [
   { id: 'bypassPermissions', icon: ShieldOff, key: 'bypass' },
 ];
 
-function Chat({ t, project, onBack, onPatch, connected }: any) {
+function Chat({ t, project, onBack, onPatch, connected, guest }: any) {
   const { lang, setLang } = useT();
   const [msgs, setMsgs] = useState<any[]>([]);
   const [text, setText] = useState(''); const [busy, setBusy] = useState(false);
@@ -1010,7 +1015,7 @@ function Chat({ t, project, onBack, onPatch, connected }: any) {
         const ctxK = Math.round(mInfo.contextWindow / 1000);
         return (
         <div className="m-settings">
-          <div className="m-set-sec">
+          {!guest && <div className="m-set-sec">
             <div className="m-set-h">{t('mobile.engine')}</div>
             <div className="m-seg m-seg-wrap m-seg-eng">
               {[
@@ -1039,7 +1044,7 @@ function Chat({ t, project, onBack, onPatch, connected }: any) {
                 <EngineMark engine="codex" size={12} /> {t('codexCli.connect') || 'Connect Codex CLI'}
               </button>
             )}
-          </div>
+          </div>}
 
           <div className="m-set-sec">
             <div className="m-set-h"><Cpu size={13} /> {t('mobile.model')}</div>
@@ -1068,7 +1073,7 @@ function Chat({ t, project, onBack, onPatch, connected }: any) {
             </div>
           </div>
 
-          <div className="m-set-sec">
+          {!guest && <div className="m-set-sec">
             <div className="m-set-h"><Shield size={13} /> {t('mobile.permissions')}</div>
             <div className="m-seg m-seg-wrap">
               {PERMS.map((p) => {
@@ -1077,7 +1082,7 @@ function Chat({ t, project, onBack, onPatch, connected }: any) {
                 return (<button key={p.id} className={`${sel ? 'on' : ''} ${p.id === 'bypassPermissions' && sel ? 'warn' : ''}`} onClick={() => patch({ permissionMode: p.id })} title={t('permission.' + p.key + 'Desc')}><PI size={12} /> {t('permission.' + p.key)}</button>);
               })}
             </div>
-          </div>
+          </div>}
 
           <div className="m-set-sec">
             <div className="m-set-h">{t('voice.language')}</div>

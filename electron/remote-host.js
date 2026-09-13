@@ -827,11 +827,19 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
         return reply({ ok: !!ok });
       }
       case 'projects.patch': {
-        // permite o client remoto trocar modelo/thinking/engine/permissão/nome
+        // permite o client remoto trocar modelo/thinking/engine/permissão/nome.
+        // CONVIDADO (grant com escopo ou share): só o que é "como o modelo
+        // responde" (modelo, thinking). Engine é "de quem é a conta" — trocar
+        // pra Codex/API rodaria na conta do DONO, ignorando a do acesso; e
+        // permissão/nome/voz são administração do projeto. Ficam do dono.
+        const bndP = teamBindings.get(from);
+        const guestOnly = isGuest || !!(bndP && bndP.pids !== null);
+        const keys = guestOnly ? ['model', 'thinkingMode'] : ['model', 'thinkingMode', 'permissionMode', 'engine', 'name', 'voiceMode'];
         const allowed = {};
-        for (const k of ['model', 'thinkingMode', 'permissionMode', 'engine', 'name', 'voiceMode']) {
+        for (const k of keys) {
           if (payload.patch && payload.patch[k] !== undefined) allowed[k] = payload.patch[k];
         }
+        if (!Object.keys(allowed).length) return reply(safeProject(projectStore.get(payload.id)) || null);
         const updated = projectStore.patch(payload.id, allowed);
         if (updated) broadcastProjectPatch(updated);
         return reply(updated);
