@@ -115,6 +115,56 @@ function teamAiBind(from, profileId) {
   try { projectStore.setSetting('team_ai_profiles', m); } catch {}
 }
 
+// Admin da IA de um GRANT: o dono configura a conta do Claude que o TIME
+// daquele acesso vai gastar (ex.: 5 pessoas na conta tecnologia@ → 1 grant →
+// 1 perfil "Equipe"). Mesmo mapa do fluxo self (g:<grantId>), então tanto faz
+// quem plugou — dono por aqui ou o convidado pelos ajustes do chat.
+async function teamAiAdmin(op, grantId, code) {
+  const key = 'g:' + String(grantId || '');
+  if (!grantId) return { ok: false, error: 'grant_required' };
+  const m = teamAiMap();
+  let prof = m[key] || null;
+  switch (op) {
+    case 'status': {
+      if (!prof) return { ok: true, bound: false };
+      const st = await claudeProfiles.status(prof).catch(() => null);
+      return { ok: true, bound: true, loggedIn: !!(st && st.loggedIn), email: (st && st.email) || null };
+    }
+    case 'loginStart': {
+      if (!prof) {
+        const c = claudeProfiles.create(`Equipe: ${String(grantId).slice(0, 8)}`);
+        if (!c || !c.ok) return { ok: false, error: 'profile_create_failed' };
+        prof = c.id;
+        m[key] = prof;
+        try { projectStore.setSetting('team_ai_profiles', m); } catch {}
+      }
+      return claudeProfiles.loginStart(prof);
+    }
+    case 'loginState': {
+      const st = claudeProfiles.loginState();
+      if (!prof || !st || st.profileId !== prof) return { active: false };
+      return st;
+    }
+    case 'loginCode': {
+      const st = claudeProfiles.loginState();
+      if (!prof || !st || st.profileId !== prof) return { ok: false, error: 'no_login_flow' };
+      return claudeProfiles.loginCode(String(code || ''));
+    }
+    case 'loginCancel': {
+      const st = claudeProfiles.loginState();
+      if (prof && st && st.profileId === prof) claudeProfiles.loginCancel();
+      return { ok: true };
+    }
+    case 'unbind': {
+      delete m[key];
+      try { projectStore.setSetting('team_ai_profiles', m); } catch {}
+      if (prof) { try { claudeProfiles.remove(prof); } catch {} }
+      return { ok: true };
+    }
+    default: return { ok: false, error: 'bad_op' };
+  }
+}
+
 function timingEq(a, b) {
   const ba = Buffer.from(String(a || '')); const bb = Buffer.from(String(b || ''));
   return ba.length === bb.length && nodeCrypto.timingSafeEqual(ba, bb);
@@ -181,6 +231,8 @@ const OWNER_ONLY_CHANNELS = new Set([
   // Compartilhamento com escopo: criar/revogar acesso é poder de dono. Um
   // convidado (de share OU de grant) jamais emite convites da sala.
   'team.createScoped', 'team.grants', 'team.revokeGrant',
+  'team.ai.adminStatus', 'team.ai.adminLoginStart', 'team.ai.adminLoginState',
+  'team.ai.adminLoginCode', 'team.ai.adminLoginCancel', 'team.ai.adminUnbind',
   // Contas do Claude do host: trocar/criar/remover afeta TODAS as conversas
   // da máquina e mexe no OAuth do dono. Nunca para um convidado de share.
   'claudeProfiles.list', 'claudeProfiles.status', 'claudeProfiles.setActive',
@@ -293,9 +345,11 @@ async function handleRpc(f, reply, fail) {
         // Convidado com escopo: MESMA régua default-deny do share guest.
         if (OWNER_ONLY_CHANNELS.has(channel)) return fail('acesso-negado');
         // Exceção deliberada: team.ai.* mexe SÓ no perfil de Claude do próprio
-        // convidado (plugar a conta dele) — nunca na conta do host.
+        // convidado (plugar a conta dele) — nunca na conta do host. Os canais
+        // admin (dono configura a conta de QUALQUER grant) ficam de fora.
+        const teamAiSelf = channel.startsWith('team.ai.') && !channel.startsWith('team.ai.admin');
         const allow = bound.write ? SHARE_WRITE_CHANNELS : SHARE_READ_CHANNELS;
-        if (!channel.startsWith('team.ai.') && !allow.has(channel)) return fail('acesso-negado');
+        if (!teamAiSelf && !allow.has(channel)) return fail('acesso-negado');
         const targetPid = (payload && (payload.projectId || payload.id)) || null;
         if (channel !== 'projects.list' && targetPid && !bound.pids.has(targetPid)) return fail('acesso-negado');
         if (channel === 'projects.list') return reply(safeProjects().filter((p) => bound.pids.has(p.id)));
@@ -483,6 +537,13 @@ async function handleRpc(f, reply, fail) {
         return reply({ ok: true });
       }
 
+      case 'team.ai.adminStatus': return reply(await teamAiAdmin('status', payload.grantId));
+      case 'team.ai.adminLoginStart': return reply(await teamAiAdmin('loginStart', payload.grantId));
+      case 'team.ai.adminLoginState': return reply(await teamAiAdmin('loginState', payload.grantId));
+      case 'team.ai.adminLoginCode': return reply(await teamAiAdmin('loginCode', payload.grantId, payload.code));
+      case 'team.ai.adminLoginCancel': return reply(await teamAiAdmin('loginCancel', payload.grantId));
+      case 'team.ai.adminUnbind': return reply(await teamAiAdmin('unbind', payload.grantId));
+
       // ─── Compartilhamento com ESCOPO, criado REMOTAMENTE pelo dono ──────
       // O caso real: as conversas vivem NESTA máquina (host), mas o dono está
       // no notebook (client). O grant precisa ser assinado com o segredo DESTA
@@ -519,7 +580,10 @@ async function handleRpc(f, reply, fail) {
         return reply({ ok: true, code: sc.code, grantId: sc.grantId, expiresAt: sc.expiresAt, url: `${require('./config').BASE}/app#c=${sc.code}` });
       }
       case 'team.grants': {
-        const all = (projectStore.getSetting('invite_grants') || []).filter((g) => g && !g.revoked);
+        const m = teamAiMap();
+        const all = (projectStore.getSetting('invite_grants') || [])
+          .filter((g) => g && !g.revoked)
+          .map((g) => ({ ...g, aiBound: !!m['g:' + g.id] }));
         return reply({ ok: true, grants: all });
       }
       case 'team.revokeGrant': {
@@ -1052,4 +1116,4 @@ function setOnState(fn) { onState = fn; }
 function subscriberCount() { return subscribers.size; }
 
 module.exports = {
-  setTeamSecret, startTeamRoom, stopTeamRoom, teamRoomActive, setEnsureTeamRoom, start, stop, refreshProjects, updateToken, getState, isHealthy, setOnState, broadcastProjectPatch, subscriberCount };
+  setTeamSecret, teamAiAdmin, startTeamRoom, stopTeamRoom, teamRoomActive, setEnsureTeamRoom, start, stop, refreshProjects, updateToken, getState, isHealthy, setOnState, broadcastProjectPatch, subscriberCount };

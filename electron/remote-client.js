@@ -298,6 +298,11 @@ async function hrpc(hostId, channel, payload = {}, timeout = 30000) {
     throw e;
   }
 }
+async function hrpcTeamAiAdmin(hostId, op, grantId, code) {
+  const map = { status: 'team.ai.adminStatus', loginStart: 'team.ai.adminLoginStart', loginState: 'team.ai.adminLoginState', loginCode: 'team.ai.adminLoginCode', loginCancel: 'team.ai.adminLoginCancel', unbind: 'team.ai.adminUnbind' };
+  const ch = map[op]; if (!ch) return { ok: false, error: 'bad_op' };
+  return hrpc(hostId, ch, { grantId, code }, 20000);
+}
 async function teamCreateScoped(hostId, opts) { return hrpc(hostId, 'team.createScoped', opts || {}, 15000); }
 async function teamGrants(hostId) { return hrpc(hostId, 'team.grants', {}, 8000); }
 async function teamRevokeGrant(hostId, id) { return hrpc(hostId, 'team.revokeGrant', { id }, 8000); }
@@ -566,7 +571,7 @@ async function stopShared(id) { return sharedRpc(id, 'claude.stop', {}, 8000).ca
 module.exports = {
   setAuthorName,
   setTeamHello,
-  teamCreateScoped, teamGrants, teamRevokeGrant,
+  teamCreateScoped, teamGrants, teamRevokeGrant, hrpcTeamAiAdmin,
   start, startDiscovery, refreshProjects, listProjects, send, loadHistory, statusOf, statusShared, stopProject, dispatchOneShot, patchProject, createOnHost, uploadSessionToHost, deleteOnHost, isHostConnected, setSelfHostId,
   startShared, listSharedProjects, disconnectShared, sharedRpc, sendShared, loadHistoryShared, stopShared,
   rpc, queueCall, isRemote, isShared, isCloudHost, getHostId, getHosts, hasHost, addHost, updateToken, disconnect, reconnect, getState, isHealthy, setOnState, setOnRemoteEvent, setOnProjectsChanged, setOnIdentityConflict,

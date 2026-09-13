@@ -1051,6 +1051,11 @@
     "aiPasteCode": "Pega el código aquí",
     "aiSend": "Confirmar código",
     "aiPending": "Login iniciado pero no terminado — conéctate de nuevo.",
-    "shareGenEmail": "Generar y enviar por e-mail"
+    "shareGenEmail": "Generar y enviar por e-mail",
+    "aiOwn": "IA propia",
+    "aiHostShort": "IA del host",
+    "aiCfg": "Configurar la cuenta de Claude de este acceso",
+    "aiCfgTitle": "Cuenta de Claude del acceso",
+    "aiCfgConnect": "Conectar la cuenta de Claude del equipo"
   }
 }

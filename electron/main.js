@@ -1947,7 +1947,10 @@ ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
   return out;
 });
 ipcMain.handle('invite:grants', async () => {
-  const grants = (projectStore.getSetting('invite_grants') || []).filter((g) => g && !g.revoked);
+  const _aiMap = (() => { try { return projectStore.getSetting('team_ai_profiles') || {}; } catch { return {}; } })();
+  const grants = (projectStore.getSetting('invite_grants') || [])
+    .filter((g) => g && !g.revoked)
+    .map((g) => ({ ...g, aiBound: !!_aiMap['g:' + g.id] }));
   // Sendo client: soma os grants dos hosts conectados (com o dono do grant
   // marcado, pra revogação ir pro lugar certo).
   try {
@@ -1959,6 +1962,16 @@ ipcMain.handle('invite:grants', async () => {
     }
   } catch {}
   return { ok: true, grants };
+});
+// Admin da IA por grant: local usa a MESMA função do host (teamAiAdmin);
+// grant de host remoto vai por RPC.
+ipcMain.handle('invite:aiAdmin', async (_e, { op, grantId, hostId, code }) => {
+  if (hostId) {
+    try { return await remoteClient.hrpcTeamAiAdmin(hostId, op, grantId, code); }
+    catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+  }
+  try { return await remoteHost.teamAiAdmin(op, grantId, code); }
+  catch (e) { return { ok: false, error: String(e && e.message || e) }; }
 });
 ipcMain.handle('invite:revokeGrant', async (_e, id, hostId) => {
   if (hostId) {

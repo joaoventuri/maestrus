@@ -89,6 +89,43 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
         : t('invite.errCreate'));
     } finally { setShareBusy(false); }
   }
+  // IA do grant (conta do time): dono configura/vê aqui mesmo.
+  const [aiCfg, setAiCfg] = useState<any>(null);        // { grant, st?, flow?, code }
+  async function openAiCfg(g: any) {
+    const st = await inviteApi?.aiAdmin?.('status', g.id, g.hostId).catch(() => null);
+    setAiCfg({ grant: g, st, code: '' });
+  }
+  async function aiLoginStart() {
+    if (!aiCfg) return;
+    const r = await inviteApi?.aiAdmin?.('loginStart', aiCfg.grant.id, aiCfg.grant.hostId).catch(() => null);
+    if (r?.ok === false) { setAiCfg({ ...aiCfg, err: r.error }); return; }
+    const flow = await inviteApi?.aiAdmin?.('loginState', aiCfg.grant.id, aiCfg.grant.hostId).catch(() => null);
+    setAiCfg({ ...aiCfg, flow });
+  }
+  // Polling do fluxo enquanto ativo (URL aparece; done fecha).
+  useEffect(() => {
+    if (!aiCfg?.flow?.active) return;
+    const iv = setInterval(async () => {
+      const f = await inviteApi?.aiAdmin?.('loginState', aiCfg.grant.id, aiCfg.grant.hostId).catch(() => null);
+      if (!f) return;
+      if (f.done) {
+        clearInterval(iv);
+        const st = await inviteApi?.aiAdmin?.('status', aiCfg.grant.id, aiCfg.grant.hostId).catch(() => null);
+        setAiCfg((c: any) => c ? { ...c, flow: null, st } : c);
+        loadShare();
+      } else setAiCfg((c: any) => c ? { ...c, flow: f } : c);
+    }, 1500);
+    return () => clearInterval(iv);
+  }, [aiCfg?.flow?.active, aiCfg?.grant?.id]);
+  async function aiSendCode() {
+    if (!aiCfg?.code?.trim()) return;
+    await inviteApi?.aiAdmin?.('loginCode', aiCfg.grant.id, aiCfg.grant.hostId, aiCfg.code.trim()).catch(() => {});
+  }
+  async function aiUnbind() {
+    await inviteApi?.aiAdmin?.('unbind', aiCfg.grant.id, aiCfg.grant.hostId).catch(() => {});
+    setAiCfg(null); loadShare();
+  }
+
   async function revokeGrant(g: any) {
     await inviteApi?.revokeGrant?.(g.id, g.hostId).catch(() => {});
     loadShare();
@@ -436,6 +473,42 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                   : <><Link2 size={15} /> {t('team.shareGen')}</>}
               </button>
 
+              {aiCfg && (
+                <div className="share-ai-cfg">
+                  <div className="share-pick-h">{t('team.aiCfgTitle')}: {(aiCfg.grant.p || []).slice(0, 2).map(nameOf).join(', ')}</div>
+                  {aiCfg.flow?.active ? (
+                    <>
+                      <div className="cloud-hint">{t('team.aiFlowHint')}</div>
+                      {aiCfg.flow.url && (
+                        <button className="cloud-logout" style={{ width: 'auto' }} onClick={() => window.open(aiCfg.flow.url, '_blank')}>
+                          <Link2 size={13} /> {t('team.aiOpenLink')}
+                        </button>
+                      )}
+                      <div style={{ display: 'flex', gap: 8, width: '100%', maxWidth: 420 }}>
+                        <input className="share-ai-code" value={aiCfg.code} spellCheck={false}
+                          onChange={(e) => setAiCfg({ ...aiCfg, code: e.target.value })}
+                          placeholder={t('team.aiPasteCode')} />
+                        <button className="cloud-submit" style={{ width: 'auto', marginTop: 0, padding: '8px 14px' }} onClick={aiSendCode} disabled={!aiCfg.code?.trim()}>
+                          {t('team.aiSend')}
+                        </button>
+                      </div>
+                    </>
+                  ) : aiCfg.st?.bound && aiCfg.st?.loggedIn ? (
+                    <>
+                      <div className="cloud-hint">{t('team.aiMine')} <strong>{aiCfg.st.email || '—'}</strong></div>
+                      <button className="cloud-logout" style={{ width: 'auto' }} onClick={aiUnbind}><Trash2 size={13} /> {t('team.aiUseHost')}</button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="cloud-hint">{t('team.aiHost')}</div>
+                      <button className="cloud-submit" style={{ maxWidth: 320 }} onClick={aiLoginStart}>
+                        <UserRound size={14} /> {t('team.aiCfgConnect')}
+                      </button>
+                    </>
+                  )}
+                  <button className="m-link" style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: 12 }} onClick={() => setAiCfg(null)}>{t('common.close')}</button>
+                </div>
+              )}
               {grants.length > 0 && (
                 <div className="share-grants">
                   <div className="share-pick-h">{t('team.shareActive')}</div>
@@ -443,8 +516,9 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                     <div key={g.id} className="share-grant">
                       <span className="share-grant-label">
                         {(g.p || []).slice(0, 3).map(nameOf).join(', ')}{(g.p || []).length > 3 ? ` +${g.p.length - 3}` : ''}
-                        <em> · {g.w ? t('team.shareWrite') : t('team.shareRead')}</em>
+                        <em> · {g.w ? t('team.shareWrite') : t('team.shareRead')} · {g.aiBound ? t('team.aiOwn') : t('team.aiHostShort')}</em>
                       </span>
+                      <button className="dev-del" title={t('team.aiCfg')} onClick={() => openAiCfg(g)}><UserRound size={13} /></button>
                       <button className="dev-del" title={t('team.shareRevoke')} onClick={() => revokeGrant(g)}><Trash2 size={13} /></button>
                     </div>
                   ))}

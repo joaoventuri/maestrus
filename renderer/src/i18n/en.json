@@ -1051,6 +1051,11 @@
     "aiPasteCode": "Paste the code here",
     "aiSend": "Confirm code",
     "aiPending": "Login started but not finished — connect again.",
-    "shareGenEmail": "Generate and send by e-mail"
+    "shareGenEmail": "Generate and send by e-mail",
+    "aiOwn": "own AI",
+    "aiHostShort": "host's AI",
+    "aiCfg": "Configure this access's Claude account",
+    "aiCfgTitle": "Claude account for this access",
+    "aiCfgConnect": "Connect the team's Claude account"
   }
 }
