@@ -855,6 +855,10 @@ async function doDiscover(): Promise<any> {
   await awaitHashJoin();
   if (savedInvite()) return resumeInvite();   // mesma invariante do doResume
   const a = getAccount(); if (!a) return { ok: false, error: 'not_logged_in' };
+  // Conta sem máquina própria mas com conversas compartilhadas por e-mail
+  // (o funcionário): o "descobrir" dela é entrar no acesso — antes só a
+  // ensureConnected fazia isso e a tela Conectar chamava discover direto.
+  if (await claimEmailShares()) return { ok: true, found: 1, via: 'email-share' };
   // já atachado a uma máquina viva? nada a fazer.
   if (link && hostId && !isCloudHost(hostId) && clientState.connected) return { ok: true, already: true };
   const t = await api('relay_token', { license_key: a.licenseKey, device_id: deviceId(), role: 'client' });
@@ -970,8 +974,13 @@ function shareGrantIdOf(sh: any): string | null {
   if (sh && sh.grant_id) return String(sh.grant_id);
   try { const p = parseInvite(sh.code); return p.ok && p.scoped && p.grant ? String(p.grant.id) : null; } catch { return null; }
 }
-async function claimEmailShares(): Promise<boolean> {
+let _sharesCheckedAt = 0;          // última consulta (throttle)
+let _sharesRetryAt = 0;            // backoff depois de um join que falhou (host offline)
+async function claimEmailShares(force = false): Promise<boolean> {
   const a = getAccount(); if (!a) return false;
+  const now = Date.now();
+  if (!force && (now - _sharesCheckedAt < 20000 || now < _sharesRetryAt)) return false;
+  _sharesCheckedAt = now;
   try {
     const r = await api('team_share', { license_key: a.licenseKey, op: 'list' });
     if (!(r && r.ok && Array.isArray(r.shares))) return false;
@@ -993,6 +1002,7 @@ async function claimEmailShares(): Promise<boolean> {
       if (!first.claimed_at) api('team_share', { license_key: a.licenseKey, op: 'claim', id: first.id }).catch(() => {});
       return true;
     }
+    _sharesRetryAt = Date.now() + 30000;   // host do acesso offline → tenta de novo em 30s, não em loop
   } catch {}
   return false;
 }
@@ -1250,6 +1260,10 @@ export function installMaestrusWeb() {
       login: async (email: string, password: string) => {
         const data = await api('activate', { email, password, device_id: deviceId(), device_name: (navigator.userAgent || 'web').slice(0, 40) });
         if (!data.ok) return { ok: false, error: data.error || 'invalid_credentials' };
+        _sharesCheckedAt = 0; _sharesRetryAt = 0;   // conta nova → olha os acessos por e-mail dela já
+        // Sala de convite salva era da conta anterior (mesmo navegador): trocar
+        // de conta não pode herdar as conversas de outra pessoa.
+        try { const cur = savedInvite(); if (cur && cur.shareGrantId) { localStorage.removeItem(LS_INVITE); _activeInviteCred = null; } } catch {}
         const acc = {
           email: data.user?.email || email, name: data.user?.name || null,
           licenseKey: data.license_key, plan: data.plan || null,
@@ -1402,7 +1416,10 @@ export function installMaestrusWeb() {
       ensureAlive: async () => ensureAlive(),
       // Descoberta por login (web): acha uma MÁQUINA online da mesma conta no
       // relay (host não-cloud) e conecta nela — sem código de pareamento.
-      discover: async () => doDiscover(),
+      // Single-flight: o boot (ensureConnected) e a tela Conectar (discover)
+      // rodavam em paralelo e cada um fechava o link do outro → estado
+      // piscando, tela remontando, discover de novo… (o loop de requisições).
+      discover: async () => ensureConnected(),
       // Conecta no container cloud da conta (Maestrus 24/7). Usado pós-onboarding.
       autoConnectCloud: async () => autoConnectCloud(),
       // Self-host: detecção + conexão por secret (sem cloud/conta).
