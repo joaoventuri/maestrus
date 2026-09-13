@@ -359,11 +359,37 @@ const OWNER_ONLY_CHANNELS = new Set([
 // quem vê o projeto vê todas as conversas dele. Comparar o id exato negava
 // qualquer fork pro convidado (e a negativa virava timeout na tela).
 function basePid(pid) { const s = String(pid || ''); const i = s.indexOf('#'); return i > 0 ? s.slice(0, i) : s; }
+// Escopo por CONVERSA: o grant lista `pid` (projeto inteiro, forks futuros
+// inclusos), `pid#main` (só a principal) e/ou `pid#<convId>` (forks
+// específicos). Um fork fora do escopo não existe pro convidado — nem na
+// lista, nem por id, nem nos eventos.
+function scopeAllows(pids, target) {
+  const t = String(target || ''); const i = t.indexOf('#');
+  const base = i > 0 ? t.slice(0, i) : t; const conv = i > 0 ? t.slice(i + 1) : 'main';
+  return pids.has(base) || pids.has(base + '#' + conv);
+}
+// projects.list de um convidado: projeto inteiro como está; projeto parcial
+// só com as conversas do escopo (e `mainShared:false` quando a principal
+// ficou de fora — o client mostra só os forks).
+function scopedProjects(pids) {
+  const out = [];
+  for (const p of safeProjects()) {
+    if (pids.has(p.id)) { out.push(p); continue; }
+    const prefix = p.id + '#';
+    const picked = [...pids].filter((x) => x.startsWith(prefix)).map((x) => x.slice(prefix.length));
+    if (!picked.length) continue;
+    const mainShared = picked.includes('main');
+    const conversations = (p.conversations || []).filter((c) => picked.includes(String(c.id)));
+    if (!mainShared && !conversations.length) continue;
+    out.push({ ...p, conversations, mainShared, partial: true });
+  }
+  return out;
+}
 function subCanSeePid(entry, pid) {
   if (!entry) return false;
   if (entry.pids === null) return true;        // acesso total (dono/membro)
   if (!pid || pid === '*') return false;       // evento global → só acesso total
-  return entry.pids.has(basePid(pid));
+  return scopeAllows(entry.pids, pid);
 }
 
 // Caminho de destino de um anexo: dentro de .maestrus/uploads DO PROJETO (assim
@@ -468,8 +494,8 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
         const allow = bound.write ? SHARE_WRITE_CHANNELS : SHARE_READ_CHANNELS;
         if (!teamAiSelf && !allow.has(channel)) return fail('acesso-negado');
         const targetPid = (payload && (payload.projectId || payload.id)) || null;
-        if (channel !== 'projects.list' && targetPid && !bound.pids.has(basePid(targetPid))) return fail('acesso-negado');
-        if (channel === 'projects.list') return reply(safeProjects().filter((p) => bound.pids.has(p.id)));
+        if (channel !== 'projects.list' && targetPid && !scopeAllows(bound.pids, targetPid)) return fail('acesso-negado');
+        if (channel === 'projects.list') return reply(scopedProjects(bound.pids));
       }
     } else if (!viaTeamRoom) {
       // Sala da CONTA: o relay só aceita device com token da conta do dono —
@@ -506,13 +532,10 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
     const allow = canWrite ? SHARE_WRITE_CHANNELS : SHARE_READ_CHANNELS;
     if (!allow.has(channel)) return fail('acesso-negado');
     const targetPid = (payload && (payload.projectId || payload.id)) || null;
-    if (channel !== 'projects.list' && targetPid && !allowedPids.has(basePid(targetPid))) {
+    if (channel !== 'projects.list' && targetPid && !scopeAllows(allowedPids, targetPid)) {
       return fail('acesso-negado');
     }
-    if (channel === 'projects.list') {
-      const all = safeProjects();
-      return reply(all.filter((p) => allowedPids.has(p.id)));
-    }
+    if (channel === 'projects.list') return reply(scopedProjects(allowedPids));
   }
   // MEMBRO VIEWER (read-only): vê TODOS os projetos, mas só canais de leitura —
   // não envia prompt, não deleta, não mexe em conversas. Editor cai no switch
@@ -687,7 +710,7 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
         }
         if (!hostInv || !hostInv.secret) return fail('no_room');
         const projects = (Array.isArray(payload.projects) ? payload.projects : [])
-          .map(String).filter((pid) => !!projectStore.get(pid));
+          .map(String).filter((pid) => pid.endsWith('#main') ? !!projectStore.get(basePid(pid)) : !!projectStore.get(pid));
         if (!projects.length) return fail('projects_required');
         let sc;
         try {

@@ -1068,7 +1068,10 @@
     "aiAddNew": "Conectar outra conta",
     "aiRemove": "Tirar do acesso",
     "aiPoolHint": "Mais de uma conta: cada turno roda na menos consumida no momento. Pra quem usa, é invisível.",
-    "aiPoolShort": "{n} contas"
+    "aiPoolShort": "{n} contas",
+    "shareMain": "Conversa principal",
+    "sharePartial": "parcial",
+    "sharePickHint": "Marque o projeto inteiro (forks futuros entram) ou abra e escolha conversa por conversa — o que ficar de fora não existe pro convidado."
   },
   "llm": {
     "title": "Contas LLM",

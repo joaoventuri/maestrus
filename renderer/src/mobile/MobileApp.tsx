@@ -597,23 +597,36 @@ function Projects({ t, projects, host, onPick, onRefresh, onDisconnect, onAccoun
         {others.length === 0 && !maestrus && <div className="m-empty">{t('mobile.noProjects')}</div>}
         {others.map((p: any) => {
           const convs = convsOf(p);
-          const isOpen = convs.length > 0 && !collapsed[p.id];
+          // Compartilhado PARCIALMENTE (escopo por conversa): sem a principal a
+          // linha do projeto é só o cabeçalho dos forks; e não se cria fork —
+          // um fork novo nasceria fora do escopo.
+          const partial = p.partial === true;
+          const mainOff = p.mainShared === false;
+          const isOpen = convs.length > 0 && (mainOff || !collapsed[p.id]);
           return (
             <div key={p.id} className="m-proj-group">
               <div className={`m-proj ${aggAct(p)?.status === 'unread' ? 'has-unread' : ''}`}>
-                {convs.length > 0 ? (
+                {convs.length > 0 && !mainOff ? (
                   <button className="m-proj-chev" onClick={() => toggle(p.id)} aria-label="toggle">
                     {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                   </button>
                 ) : <span className="m-proj-ic">▸</span>}
-                <button className="m-proj-main" onClick={() => onPick(p)}>
-                  <span className="m-proj-name">{p.name}{convs.length > 0 && <span className="m-proj-count"> · {convs.length + 1}</span>}</span>
-                  <ActivityIndicator activity={aggAct(p) || null} />
-                  <span className="m-proj-meta">{(p.engine === 'cloud' ? 'Claude API' : (p.model || 'default'))}</span>
-                </button>
-                <button className="m-proj-fork" disabled={forking === p.id} onClick={() => forkProject(p)} aria-label="fork" title={t('conv.fork')}>
-                  <GitBranch size={15} />
-                </button>
+                {mainOff ? (
+                  <div className="m-proj-main m-proj-head">
+                    <span className="m-proj-name">{p.name}<span className="m-proj-count"> · {convs.length}</span></span>
+                  </div>
+                ) : (
+                  <button className="m-proj-main" onClick={() => onPick(p)}>
+                    <span className="m-proj-name">{p.name}{convs.length > 0 && <span className="m-proj-count"> · {convs.length + 1}</span>}</span>
+                    <ActivityIndicator activity={aggAct(p) || null} />
+                    <span className="m-proj-meta">{(p.engine === 'cloud' ? 'Claude API' : (p.model || 'default'))}</span>
+                  </button>
+                )}
+                {!partial && (
+                  <button className="m-proj-fork" disabled={forking === p.id} onClick={() => forkProject(p)} aria-label="fork" title={t('conv.fork')}>
+                    <GitBranch size={15} />
+                  </button>
+                )}
               </div>
               {isOpen && convs.map((c: any) => {
                 const cid = `${p.id}#${c.id}`;

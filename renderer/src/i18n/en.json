@@ -1068,7 +1068,10 @@
     "aiAddNew": "Connect another account",
     "aiRemove": "Remove from access",
     "aiPoolHint": "More than one account: each turn runs on the least-used one at that moment. Invisible to the people using it.",
-    "aiPoolShort": "{n} accounts"
+    "aiPoolShort": "{n} accounts",
+    "shareMain": "Main conversation",
+    "sharePartial": "partial",
+    "sharePickHint": "Pick the whole project (future forks included) or expand and choose conversation by conversation — whatever is left out does not exist for the guest."
   },
   "llm": {
     "title": "LLM Accounts",

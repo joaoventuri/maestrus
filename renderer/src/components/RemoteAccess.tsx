@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Server, Loader2, Wifi, WifiOff, Copy, Check, ShieldCheck, Smartphone, Link2, Trash2, Users, ChevronDown, UserRound } from 'lucide-react';
+import { Server, Loader2, Wifi, WifiOff, Copy, Check, ShieldCheck, Smartphone, Link2, Trash2, Users, ChevronDown, ChevronRight, UserRound } from 'lucide-react';
 import { CloudAccount, RemoteHostState, RemoteClientState } from '../types';
 import { useT } from '../lib/i18n';
 
@@ -66,8 +66,44 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
     inviteApi?.grants?.().then((r: any) => setGrants(r?.grants || [])).catch(() => {});
   }
   useEffect(() => { if (shareOpen) loadShare(); }, [shareOpen]);
+  // Escopo por CONVERSA. `sel` guarda `pid` (projeto inteiro, forks futuros
+  // inclusos), `pid#main` (só a principal) e/ou `pid#<convId>` (forks). Um
+  // fork fora do escopo não aparece pro convidado — nem por id.
+  const convIdsOf = (p: any) => ['main', ...(((p.conversations || []) as any[]).map((c) => String(c.id)))];
+  const projState = (p: any): 'all' | 'partial' | 'none' => {
+    if (sel.has(p.id)) return 'all';
+    return [...sel].some((x) => x.startsWith(p.id + '#')) ? 'partial' : 'none';
+  };
+  const convOn = (p: any, cid: string) => sel.has(p.id) || sel.has(`${p.id}#${cid}`);
+  const [pickOpen, setPickOpen] = useState<Record<string, boolean>>({});
   function toggleSel(id: string) {
-    setSel((cur) => { const n = new Set(cur); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    const p = allProjects.find((x) => x.id === id);
+    setSel((cur) => {
+      const n = new Set(cur);
+      const st = p ? (n.has(id) ? 'all' : [...n].some((x) => x.startsWith(id + '#')) ? 'partial' : 'none') : (n.has(id) ? 'all' : 'none');
+      for (const x of [...n]) if (x === id || x.startsWith(id + '#')) n.delete(x);
+      if (st === 'none') n.add(id);
+      return n;
+    });
+    setShareUrl(null);
+  }
+  function toggleConv(p: any, cid: string) {
+    setSel((cur) => {
+      const n = new Set(cur);
+      const all = convIdsOf(p);
+      if (n.has(p.id)) {                    // inteiro → explode em conversas e tira esta
+        n.delete(p.id);
+        for (const c of all) if (c !== cid) n.add(`${p.id}#${c}`);
+        return n;
+      }
+      const key = `${p.id}#${cid}`;
+      n.has(key) ? n.delete(key) : n.add(key);
+      if (all.every((c) => n.has(`${p.id}#${c}`))) {   // todas marcadas → volta a ser o projeto inteiro
+        for (const c of all) n.delete(`${p.id}#${c}`);
+        n.add(p.id);
+      }
+      return n;
+    });
     setShareUrl(null);
   }
   async function genShare() {
@@ -142,8 +178,14 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
   }
   // Grants do host vêm com ids CURTOS; a lista local usa remote:<host>:<id>.
   function nameOf(pid: string) {
-    const hit = allProjects.find((p) => p.id === pid || String(p.id).endsWith(':' + pid));
-    return hit?.name || pid.slice(0, 8);
+    const i = pid.indexOf('#');
+    const base = i > 0 ? pid.slice(0, i) : pid; const conv = i > 0 ? pid.slice(i + 1) : null;
+    const hit = allProjects.find((p) => p.id === base || String(p.id).endsWith(':' + base));
+    const name = hit?.name || base.slice(0, 8);
+    if (!conv) return name;
+    if (conv === 'main') return `${name} · ${t('team.shareMain')}`;
+    const c = ((hit?.conversations || []) as any[]).find((x) => String(x.id) === conv);
+    return `${name} · ${c?.title || conv.slice(0, 6)}`;
   }
 
   function refreshInvite() {
@@ -444,12 +486,39 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
 
               <div className="share-pick">
                 <div className="share-pick-h">{t('team.sharePick')}</div>
-                {allProjects.map((p) => (
-                  <div key={p.id} className={`share-item ${sel.has(p.id) ? 'on' : ''}`} onClick={() => toggleSel(p.id)}>
-                    <span className="share-item-name">{p.name}</span>
-                    <MiniSwitch on={sel.has(p.id)} />
-                  </div>
-                ))}
+                <div className="cloud-hint" style={{ marginTop: 0, marginBottom: 6 }}>{t('team.sharePickHint')}</div>
+                {allProjects.map((p) => {
+                  const st = projState(p);
+                  const convs: any[] = p.conversations || [];
+                  const open = pickOpen[p.id] ?? (st === 'partial');
+                  return (
+                    <div key={p.id}>
+                      <div className={`share-item ${st !== 'none' ? 'on' : ''} ${st === 'partial' ? 'partial' : ''}`} onClick={() => toggleSel(p.id)}>
+                        {convs.length > 0 ? (
+                          <button className="share-item-chev" onClick={(e) => { e.stopPropagation(); setPickOpen((o) => ({ ...o, [p.id]: !open })); }} title={`${convs.length + 1}`}>
+                            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                          </button>
+                        ) : null}
+                        <span className="share-item-name">{p.name}{convs.length > 0 && <em style={{ color: 'var(--text-dim)', fontStyle: 'normal' }}> · {st === 'partial' ? t('team.sharePartial') : `${convs.length + 1}`}</em>}</span>
+                        <MiniSwitch on={st !== 'none'} />
+                      </div>
+                      {open && convs.length > 0 && (
+                        <>
+                          <div className={`share-item conv ${convOn(p, 'main') ? 'on' : ''}`} onClick={() => toggleConv(p, 'main')}>
+                            <span className="share-item-name">{t('team.shareMain')}</span>
+                            <MiniSwitch on={convOn(p, 'main')} />
+                          </div>
+                          {convs.map((c: any) => (
+                            <div key={c.id} className={`share-item conv ${convOn(p, String(c.id)) ? 'on' : ''}`} onClick={() => toggleConv(p, String(c.id))}>
+                              <span className="share-item-name">{c.title}</span>
+                              <MiniSwitch on={convOn(p, String(c.id))} />
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
                 {allProjects.length === 0 && <div className="cloud-hint">—</div>}
               </div>
 

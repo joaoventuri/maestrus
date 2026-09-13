@@ -194,13 +194,16 @@ export default function Sidebar({
         )}
         {others.map((p) => {
           const convs = convsOf(p);
-          const isOpen = convs.length > 0 && (expanded[p.id] !== false);
+          // Compartilhado parcialmente (escopo por conversa) sem a principal: a
+          // linha vira só o cabeçalho dos forks.
+          const mainOff = (p as any).mainShared === false;
+          const isOpen = convs.length > 0 && (mainOff || expanded[p.id] !== false);
           const isEditingProj = editing && editing.projectId === p.id && !editing.convId;
           return (
           <div key={p.id} className="nav-project-group">
           <div
-            className={`nav-item ${activeId === p.id ? 'active' : ''} ${aggActivity(p)?.status === 'unread' ? 'has-unread' : ''}`}
-            onClick={() => onPick(p.id)}
+            className={`nav-item ${activeId === p.id ? 'active' : ''} ${aggActivity(p)?.status === 'unread' ? 'has-unread' : ''} ${mainOff ? 'nav-item-head' : ''}`}
+            onClick={() => { if (!mainOff) onPick(p.id); }}
             onContextMenu={(e) => openMenu(e, p.id)}
           >
             {convs.length > 0 && (

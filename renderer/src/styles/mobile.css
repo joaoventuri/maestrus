@@ -121,6 +121,7 @@ button, input, textarea { font-family: inherit; }
 .m-proj-group .m-proj { margin-bottom: 0; gap: 8px; padding: 14px 12px; }
 .m-proj-group.has-forks .m-proj { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .m-proj-chev { background: transparent; border: none; color: var(--dim); padding: 4px; display: flex; align-items: center; cursor: pointer; flex: 0 0 auto; }
+.m-proj-head { cursor: default; opacity: .8; }
 .m-proj-main { flex: 1; display: flex; align-items: center; gap: 10px; background: transparent; border: none; color: inherit; font-size: 17px; text-align: left; cursor: pointer; padding: 0; min-width: 0; }
 .m-proj-count { color: var(--faint); font-size: 13px; font-family: var(--mono); }
 .m-proj-fork { background: transparent; border: none; color: var(--dim); padding: 6px; display: flex; align-items: center; cursor: pointer; flex: 0 0 auto; border-radius: 8px; }
