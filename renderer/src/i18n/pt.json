@@ -1034,6 +1034,10 @@
     "shareNone": "Nenhuma conversa selecionada.",
     "shareProjects": "conversas",
     "shareOneHost": "Escolha conversas de UMA máquina só por link (um convite pertence a uma sala).",
-    "shareNoRoom": "O host dessas conversas ainda não tem sala de convite — gere um convite nele primeiro."
+    "shareNoRoom": "O host dessas conversas ainda não tem sala de convite — gere um convite nele primeiro.",
+    "emailLabel": "Ou envie para um e-mail do Maestrus (opcional)",
+    "emailSent": "Enviado para {email} — as conversas aparecem quando essa pessoa logar.",
+    "emailNotFound": "Esse e-mail não tem conta no maestrus.cloud — use o link.",
+    "emailFailed": "Não consegui registrar o envio — use o link."
   }
 }

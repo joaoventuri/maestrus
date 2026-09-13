@@ -1034,6 +1034,10 @@
     "shareNone": "No conversation selected.",
     "shareProjects": "conversations",
     "shareOneHost": "Pick conversations from ONE machine per link (an invite belongs to one room).",
-    "shareNoRoom": "The host of those conversations has no invite room yet — generate an invite there first."
+    "shareNoRoom": "The host of those conversations has no invite room yet — generate an invite there first.",
+    "emailLabel": "Or send to a Maestrus e-mail (optional)",
+    "emailSent": "Sent to {email} — the conversations will appear when they log in.",
+    "emailNotFound": "That e-mail has no maestrus.cloud account — use the link.",
+    "emailFailed": "Couldn't register the delivery — use the link."
   }
 }

@@ -55,6 +55,10 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
   const [grants, setGrants] = useState<any[]>([]);
+  // Enviar por E-MAIL: se a pessoa tem conta no maestrus.cloud, o convite fica
+  // na caixa dela e o app entra sozinho quando ela logar — nem link precisa.
+  const [shareEmail, setShareEmail] = useState('');
+  const [shareNote, setShareNote] = useState<string | null>(null);
   function loadShare() {
     // Projetos locais E remotos: no client, as conversas moram no host — o
     // pedido de grant é roteado pra lá pelo main (um link = uma máquina).
@@ -70,8 +74,16 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
     if (!sel.size) return;
     setShareBusy(true); setError(null); setShareUrl(null);
     try {
-      const r = await inviteApi?.createScoped?.({ projects: [...sel], write: shareWrite });
-      if (r?.ok && r.url) { setShareUrl(r.url); refreshInvite(); loadShare(); }
+      setShareNote(null);
+      const r = await inviteApi?.createScoped?.({ projects: [...sel], write: shareWrite, email: shareEmail.trim() || undefined });
+      if (r?.ok && r.url) {
+        setShareUrl(r.url); refreshInvite(); loadShare();
+        if (shareEmail.trim()) {
+          setShareNote(r.emailSent ? t('team.emailSent').replace('{email}', shareEmail.trim())
+            : r.emailError === 'email_not_found' ? t('team.emailNotFound')
+            : t('team.emailFailed'));
+        }
+      }
       else setError(r?.error === 'mixed_hosts' ? t('team.shareOneHost')
         : r?.error === 'no_room' ? t('team.shareNoRoom')
         : t('invite.errCreate'));
@@ -268,6 +280,11 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
   }
 
   const [tab, setTab] = useState<'host' | 'connect'>('host');
+  // "Usar como Client" no primeiro uso → esta tela É o passo seguinte: abre
+  // direto em Conectar (código/QR), não na aba de virar servidor.
+  useEffect(() => {
+    (window.maestrus.app as any).getMode?.().then((m: any) => { if (m?.mode === 'client') setTab('connect'); }).catch(() => {});
+  }, []);
   const tabs: { id: 'host' | 'connect'; label: string; icon: any }[] = isWeb
     ? [{ id: 'connect', label: t('remote.tabConnect'), icon: Smartphone }]
     : [
@@ -389,6 +406,12 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                 {allProjects.length === 0 && <div className="cloud-hint">—</div>}
               </div>
 
+              <label className="cloud-field" style={{ maxWidth: 320 }}>
+                <span>{t('team.emailLabel')}</span>
+                <input value={shareEmail} onChange={(e) => { setShareEmail(e.target.value); setShareUrl(null); }}
+                  placeholder="colega@empresa.com" type="email" spellCheck={false} />
+              </label>
+
               <div className="share-perm">
                 <button className={`remote-tab ${shareWrite ? 'active' : ''}`} onClick={() => { setShareWrite(true); setShareUrl(null); }}>{t('team.shareWrite')}</button>
                 <button className={`remote-tab ${!shareWrite ? 'active' : ''}`} onClick={() => { setShareWrite(false); setShareUrl(null); }}>{t('team.shareRead')}</button>
@@ -401,6 +424,7 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                     <code>{shareUrl.slice(0, 34)}…</code>{shareCopied ? <Check size={14} /> : <Copy size={14} />}
                   </button>
                   <div className="cloud-hint">{t('team.shareLink')}</div>
+                  {shareNote && <div className="cloud-hint" style={{ color: 'var(--accent)' }}>{shareNote}</div>}
                 </div>
               ) : (
                 <button className="cloud-submit" style={{ maxWidth: 320 }} onClick={genShare} disabled={shareBusy || !sel.size} title={!sel.size ? t('team.shareNone') : ''}>

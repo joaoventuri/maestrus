@@ -943,6 +943,21 @@ async function ensureConnected(): Promise<any> {
   _connectFlight = ensureConnectedInner().finally(() => { _connectFlight = null; });
   return _connectFlight;
 }
+// Convites POR E-MAIL pendentes na conta: alguém compartilhou conversas com
+// este e-mail — entra sozinho na sala e marca como entregue. É o que faz o
+// "compartilhei com fulano@" virar "apareceu pra ele quando logou".
+async function claimEmailShares(): Promise<boolean> {
+  const a = getAccount(); if (!a) return false;
+  try {
+    const r = await api('team_share', { license_key: a.licenseKey, op: 'list' });
+    const first = r && r.ok && Array.isArray(r.shares) && r.shares[0];
+    if (!first || !first.code) return false;
+    const j = await joinInvite(first.code);
+    if (j && j.ok) { api('team_share', { license_key: a.licenseKey, op: 'claim', id: first.id }).catch(() => {}); return true; }
+  } catch {}
+  return false;
+}
+
 async function ensureConnectedInner(): Promise<any> {
   // Convite salvo vem primeiro: quem pareou assim pode não ter conta nenhuma,
   // e mesmo tendo, a sala que ele escolheu não pode ser trocada por discovery.
@@ -950,6 +965,9 @@ async function ensureConnectedInner(): Promise<any> {
     const r = await resumeInvite();
     if (r.ok) return { ok: true, via: 'invite' };
   }
+  // Sem sala salva: antes de procurar máquinas próprias, vê se alguém me
+  // compartilhou conversas por e-mail.
+  if (!savedInvite() && await claimEmailShares()) return { ok: true, via: 'email-share' };
   const a = getAccount(); if (!a) return { ok: false };
   const saved = loadSavedRemote();
   // Sem pareamento salvo → tenta discovery direto (pega máquina online OU o

@@ -680,7 +680,7 @@ app.whenReady().then(async () => {
   // "Be a Host always on" (default): se logado, vira host sozinho pra a máquina
   // já aparecer pros outros dispositivos da conta (web/mobile/outro desktop).
   // Pequeno atraso pra a janela e o estado assentarem antes de anunciar.
-  setTimeout(() => { maybeAutoHost(); resumeInvites(); autoReconnectShares().catch(() => {}); }, 1500);
+  setTimeout(() => { maybeAutoHost(); resumeInvites(); claimEmailShares(); autoReconnectShares().catch(() => {}); }, 1500);
   // Execuções em segundo plano de sessões anteriores: os processos escrevem
   // direto em disco e NÃO morrem com o app — reidrata pra UI voltar a vê-los.
   try { runStore.rehydrate(); } catch {}
@@ -1907,7 +1907,13 @@ ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
     const shortIds = remotes.map((id) => id.split(':').slice(2).join(':'));
     try {
       const r = await remoteClient.teamCreateScoped(hostId, { projects: shortIds, write: opts.write !== false, ttlMs: opts.ttlMs });
-      return r && r.ok ? r : { ok: false, error: (r && r.error) || 'host_failed' };
+      if (!(r && r.ok)) return { ok: false, error: (r && r.error) || 'host_failed' };
+      if (opts.email && r.code) {
+        const es = await cloud.teamShare('create', { email: String(opts.email), code: r.code, host_name: 'host' });
+        r.emailSent = !!(es && es.ok);
+        if (!r.emailSent) r.emailError = (es && es.error) || 'send_failed';
+      }
+      return r;
     } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
   }
   // Garante a sala de equipe aberta (reusa o segredo; cria na primeira vez).
@@ -1930,7 +1936,15 @@ ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
     projectStore.setSetting('invite_grants', all);
   } catch {}
   const webBase = `${require('./config').BASE}/app`;
-  return { ok: true, code: sc.code, grantId: sc.grantId, expiresAt: sc.expiresAt, url: `${webBase}#c=${sc.code}` };
+  const out = { ok: true, code: sc.code, grantId: sc.grantId, expiresAt: sc.expiresAt, url: `${webBase}#c=${sc.code}` };
+  // E-mail: o backend guarda o código como caixa de entrada — quando a pessoa
+  // logar em qualquer superfície, o app dela entra sozinho na sala.
+  if (opts.email) {
+    const es = await cloud.teamShare('create', { email: String(opts.email), code: sc.code, host_name: require('os').hostname() });
+    out.emailSent = !!(es && es.ok);
+    if (!out.emailSent) out.emailError = (es && es.error) || 'send_failed';
+  }
+  return out;
 });
 ipcMain.handle('invite:grants', async () => {
   const grants = (projectStore.getSetting('invite_grants') || []).filter((g) => g && !g.revoked);
@@ -2022,6 +2036,22 @@ ipcMain.handle('invite:leave', async () => {
 // No boot: reata as duas pontas se houver convite salvo. É o que faz o
 // pareamento sobreviver a fechar o app — sem isso o usuário coleta código de
 // novo toda vez.
+// Convites por E-MAIL pendentes na conta: entra sozinho no mais recente e
+// marca como entregue. É o "compartilhei com fulano@ e apareceu pra ele".
+async function claimEmailShares() {
+  try {
+    if (!cloud.getAccount || !cloud.getAccount()) return;
+    if (getInviteClient()) return;                       // já estou numa sala
+    const r = await cloud.teamShare('list');
+    const first = r && r.ok && Array.isArray(r.shares) && r.shares[0];
+    if (!first || !first.code) return;
+    const j = joinInvite(first.code);
+    if (j && j.ok) {
+      await cloud.teamShare('claim', { id: first.id }).catch(() => {});
+      try { mainWindow?.webContents.send('invite:joined', j); } catch {}
+    }
+  } catch {}
+}
 function resumeInvites() {
   try { const h = getInviteHost(); if (h && h.secret) ensureTeamRoom(); } catch {}
   try {

@@ -328,6 +328,15 @@ async function relayToken(role, deviceIdOverride) {
     return data;
   } catch (e) { return { ok: false, error: e.message }; }
 }
+// Compartilhamento por e-mail: o backend é só o carteiro do código do convite.
+async function teamShare(op, payload = {}) {
+  const acc = getAccount();
+  if (!acc) return { ok: false, error: 'not_logged_in' };
+  try {
+    const { data } = await apiPost('team_share', { license_key: acc.licenseKey, op, ...payload });
+    return data;
+  } catch (e) { return { ok: false, error: e.message }; }
+}
 async function pairCreate() {
   const acc = getAccount();
   if (!acc) return { ok: false, error: 'not_logged_in' };
@@ -413,4 +422,4 @@ async function shareRelayToken(shareId) {
   } catch (e) { return { ok: false, error: e.message }; }
 }
 
-module.exports = { isConfigured, activate, validate, logout, getAccount, setAccount, isPro, getDeviceId, regenerateDeviceId, checkUpdate, panelUrl, aiStatus, relayToken, pairCreate, pairRedeem, cloudList, cloudStart, cloudStop, cloudPause, cloudResume, cloudDelete, devices, deviceDelete, devicePing, userApi, shareCreate, shareList, shareRevoke, shareAccept, shareRelayToken, containerStatus, containerProvision, containerPause, domainStatus, domainSet, domainVerify, domainRemove };
+module.exports = { teamShare, isConfigured, activate, validate, logout, getAccount, setAccount, isPro, getDeviceId, regenerateDeviceId, checkUpdate, panelUrl, aiStatus, relayToken, pairCreate, pairRedeem, cloudList, cloudStart, cloudStop, cloudPause, cloudResume, cloudDelete, devices, deviceDelete, devicePing, userApi, shareCreate, shareList, shareRevoke, shareAccept, shareRelayToken, containerStatus, containerProvision, containerPause, domainStatus, domainSet, domainVerify, domainRemove };
