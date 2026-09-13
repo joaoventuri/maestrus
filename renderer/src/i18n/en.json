@@ -1078,15 +1078,18 @@
     "usageEmpty": "No usage data (logged out?).",
     "manageTitle": "Manage accounts",
     "manageSub": "Create, log in and remove Claude accounts on this machine.",
-    "usageNeedsSwitch": "Usage becomes available after using this account once — the token materializes on switch.",
+    "usageNeedsSwitch": "This account was connected by an older version and its token wasn't stored. Reconnect ONCE (no need to switch) and usage will always show.",
     "usageExpired": "This account's session expired — reconnect.",
     "showUsage": "Show usage",
     "hideUsage": "Hide usage",
     "movedHint": "Claude account management now lives in “LLM Accounts” in the sidebar — together with official per-account usage.",
     "teamTitle": "Team accounts",
-    "teamSub": "Each shared access and the Claude account it spends.",
-    "teamEmpty": "No shared access yet — create one in Remote Access → Share specific conversations.",
-    "teamUsesYours": "uses YOUR active account",
-    "teamManage": "Manage accesses and team account"
+    "teamSub": "Each shared access and which Claude account it spends.",
+    "teamEmpty": "No shared access yet — create one in Remote Access.",
+    "teamUsesYours": "uses YOUR account",
+    "teamManage": "Manage team accesses and accounts",
+    "teamCfg": "Claude account…",
+    "usageReconnect": "This account's token isn't stored here (old login). Reconnect once — usage will then always show, no switching needed.",
+    "reconnect": "Reconnect now"
   }
 }

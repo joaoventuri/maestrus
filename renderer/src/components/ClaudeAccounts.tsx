@@ -184,7 +184,7 @@ export default function ClaudeAccounts({ scope = 'local', withUsage = false, bar
                     <button className="btn-icon danger" onClick={() => removeProfile(p.id)} title={t('claudeAcc.remove') || 'Remover'}><Trash2 size={13} /></button>
                   )}
                 </div>
-                {withUsage && usageOpen === p.id && <UsageBars profileId={p.id} />}
+                {withUsage && usageOpen === p.id && <UsageBars profileId={p.id} onReconnect={() => { setUsageOpen(null); connect(p.id); }} />}
               </div>
             );
           })}
@@ -247,7 +247,7 @@ export default function ClaudeAccounts({ scope = 'local', withUsage = false, bar
 // Sessão de 5h, semana e semana por modelo, com severidade e reset. Erros
 // viram frase de gente: "sem credencial" numa conta estacionada não é bug — o
 // token só materializa quando a conta é usada uma vez.
-function UsageBars({ profileId }: { profileId: string }) {
+function UsageBars({ profileId, onReconnect }: { profileId: string; onReconnect?: () => void }) {
   const { t } = useT();
   const [data, setData] = useState<{ limits: any[]; error?: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -263,12 +263,19 @@ function UsageBars({ profileId }: { profileId: string }) {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [profileId]);
 
   const friendly = (e: string) =>
-    e === 'no_credentials' ? (t('llm.usageNeedsSwitch') || 'Uso disponível depois de USAR esta conta uma vez — o token materializa na troca.')
-    : e === 'auth_expired' ? (t('llm.usageExpired') || 'Sessão desta conta expirou — reconecte.')
-    : `${t('llm.usageErr') || 'Não consegui buscar o uso:'} ${e}`;
+    e === 'no_credentials' || e === 'auth_expired'
+      ? (t('llm.usageReconnect') || 'O token desta conta não está guardado aqui (login antigo). Reconecte uma vez — depois o uso aparece sempre, sem trocar de conta.')
+      : `${t('llm.usageErr') || 'Não consegui buscar o uso:'} ${e}`;
 
   if (!data) return <div className="llm-usage-loading"><Loader2 size={13} className="spin" /></div>;
-  if (data.error) return <div className="llm-usage-err">{friendly(data.error)} <button onClick={load}><RefreshCw size={11} /></button></div>;
+  if (data.error) return (
+    <div className="llm-usage-err">
+      {friendly(data.error)}
+      {(data.error === 'no_credentials' || data.error === 'auth_expired') && onReconnect
+        ? <button className="btn-secondary" onClick={onReconnect}>{t('claudeAcc.connect') || 'Conectar'}</button>
+        : <button onClick={load}><RefreshCw size={11} /></button>}
+    </div>
+  );
   if (!data.limits.length) return <div className="llm-usage-err">{t('llm.usageEmpty')}</div>;
   return (
     <div className="llm-usage">

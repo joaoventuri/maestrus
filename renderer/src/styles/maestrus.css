@@ -3336,7 +3336,10 @@ html, body, #root {
 
 /* ─── Contas do Claude (multi-conta / switch) ─────────────────────────────── */
 .claude-acc-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; max-width: 560px; }
-.claude-acc-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; }
+.claude-acc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 14px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; }
+/* Uso expandido: largura TOTAL abaixo da linha — espremido à direita colidia
+   rótulo com percentual e esmagava o nome da conta. */
+.claude-acc-row .llm-usage { flex-basis: 100%; order: 10; padding: 8px 4px 4px 34px; }
 .claude-acc-row.active { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: color-mix(in srgb, var(--accent) 5%, var(--bg-2)); }
 .claude-acc-switch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); background: transparent; color: var(--accent); display: grid; place-items: center; cursor: pointer; flex-shrink: 0; transition: .15s; }
 .claude-acc-switch.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
@@ -3844,8 +3847,8 @@ html, body, #root {
 .llm-acct-use { position: absolute; right: 10px; top: 10px; background: transparent; border: 1px solid var(--border); color: var(--text-dim); border-radius: 8px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
 .llm-acct-use:hover { border-color: var(--accent); color: var(--text); }
 .llm-usage { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 8px 10px 12px 30px; }
-.llm-limit-head { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 4px; }
-.llm-limit-label { color: var(--text-dim); }
+.llm-limit-head { display: flex; justify-content: space-between; gap: 14px; font-size: 12.5px; margin-bottom: 4px; }
+.llm-limit-label { flex: 1; min-width: 0; color: var(--text-dim); }
 .llm-limit-pct { font-weight: 700; font-variant-numeric: tabular-nums; }
 .llm-limit-pct.ok { color: var(--success); }
 .llm-limit-pct.warn { color: var(--accent); }
@@ -3864,7 +3867,9 @@ html, body, #root {
 /* Uso dentro da linha de conta: quebra pra LARGURA TOTAL sob a linha (dentro
    do flex da row ele espremia na coluna de ações — rótulo colava no %). */
 .claude-acc-row { flex-wrap: wrap; }
-.claude-acc-row .llm-usage { flex-basis: 100%; padding: 10px 6px 6px 40px; }
+.claude-acc-row .llm-usage,
+.claude-acc-row .llm-usage-err,
+.claude-acc-row .llm-usage-loading { flex-basis: 100%; order: 10; padding: 10px 6px 6px 40px; border-top: 1px solid var(--border); margin-top: 2px; }
 .llm-limit { min-width: 0; }
 .llm-limit-head { gap: 12px; }
 .llm-limit-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -1078,15 +1078,18 @@
     "usageEmpty": "Sem dados de uso (conta deslogada?).",
     "manageTitle": "Gerenciar contas",
     "manageSub": "Criar, logar e remover contas do Claude desta máquina.",
-    "usageNeedsSwitch": "Uso disponível depois de usar esta conta uma vez — o token materializa na troca.",
+    "usageNeedsSwitch": "Esta conta foi conectada por uma versão antiga e o token não ficou guardado. Reconecte UMA vez (sem trocar de conta) e o uso passa a aparecer sempre.",
     "usageExpired": "Sessão desta conta expirou — reconecte.",
     "showUsage": "Ver uso",
     "hideUsage": "Ocultar uso",
     "movedHint": "A gestão de contas do Claude agora vive em “Contas LLM”, na barra lateral — junto do uso oficial por conta.",
     "teamTitle": "Contas do time",
-    "teamSub": "Cada acesso compartilhado e a conta do Claude que ele gasta.",
-    "teamEmpty": "Nenhum acesso compartilhado ainda — crie um em Acesso Remoto → Compartilhar conversas específicas.",
-    "teamUsesYours": "usa a SUA conta ativa",
-    "teamManage": "Gerenciar acessos e conta do time"
+    "teamSub": "Cada acesso compartilhado e qual conta do Claude ele gasta.",
+    "teamEmpty": "Nenhum acesso compartilhado ainda — crie um em Acesso Remoto.",
+    "teamUsesYours": "usa a SUA conta",
+    "teamManage": "Gerenciar acessos e contas do time",
+    "teamCfg": "Conta do Claude…",
+    "usageReconnect": "O token desta conta não está guardado aqui (login antigo). Reconecte uma vez — depois o uso aparece sempre, sem trocar de conta.",
+    "reconnect": "Reconectar agora"
   }
 }

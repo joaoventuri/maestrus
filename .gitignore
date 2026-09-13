@@ -17,3 +17,6 @@ maestrus-server/data/
 # Uploads e material de trabalho — nunca vao para o repo publico
 .maestrus/
 *.zip
+
+.playwright-mcp/
+llm-*.png
