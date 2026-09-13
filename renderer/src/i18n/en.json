@@ -646,7 +646,9 @@
     "searchAgain": "Search my machines again",
     "notifDone": "Response ready",
     "notifAsk": "The agent asked a question",
-    "haveInvite": "I have an invite from another machine"
+    "haveInvite": "I have an invite from another machine",
+    "histErr": "Couldn't load the history:",
+    "retry": "Retry"
   },
   "auth": {
     "tagline": "Claude account required",

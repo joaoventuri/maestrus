@@ -646,7 +646,9 @@
     "searchAgain": "Buscar mis máquinas de nuevo",
     "notifDone": "Respuesta lista",
     "notifAsk": "El agente hizo una pregunta",
-    "haveInvite": "Tengo una invitación de otra máquina"
+    "haveInvite": "Tengo una invitación de otra máquina",
+    "histErr": "No pude cargar el historial:",
+    "retry": "Reintentar"
   },
   "auth": {
     "tagline": "Inicio de sesión en Claude requerido",

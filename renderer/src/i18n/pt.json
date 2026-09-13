@@ -646,7 +646,9 @@
     "searchAgain": "Procurar minhas máquinas de novo",
     "notifDone": "Resposta pronta",
     "notifAsk": "O agente fez uma pergunta",
-    "haveInvite": "Tenho um convite de outra máquina"
+    "haveInvite": "Tenho um convite de outra máquina",
+    "histErr": "Não consegui carregar o histórico:",
+    "retry": "Tentar de novo"
   },
   "auth": {
     "tagline": "Login no Claude necessário",

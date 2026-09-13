@@ -581,7 +581,26 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
       if (evt.type === 'user') {
         // dedupe: se acabamos de adicionar essa mesma msg otimisticamente
         // (cloud/remote), não duplica o balão.
-        if (pendingUserRef.current && evt.text === pendingUserRef.current) { pendingUserRef.current = null; return; }
+        // O eco pode voltar PREFIXADO ("Joao: texto") — o host assina a
+        // mensagem do time. Comparar por igualdade exata deixava DOIS balões:
+        // o otimista (cru) e o eco (assinado).
+        if (pendingUserRef.current && (evt.text === pendingUserRef.current || (evt.text || '').endsWith(': ' + pendingUserRef.current))) {
+          // Se o eco veio assinado, atualiza o balão otimista pra versão
+          // assinada — um balão só, com autor.
+          if (evt.text !== pendingUserRef.current) {
+            const signed = evt.text;
+            setMessages((m) => {
+              for (let i = m.length - 1; i >= 0; i--) {
+                if (m[i].role === 'user' && m[i].text === pendingUserRef.current) {
+                  const next = [...m]; next[i] = { ...next[i], text: signed }; return next;
+                }
+              }
+              return m;
+            });
+          }
+          pendingUserRef.current = null;
+          return;
+        }
         setMessages((m) => [...m, { role: 'user', text: evt.text, timestamp: evt.timestamp }]);
         return;
       }

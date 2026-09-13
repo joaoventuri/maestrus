@@ -632,3 +632,7 @@ button, input, textarea { font-family: inherit; }
 /* Onda do modo voz no PWA — mais estreita que no desktop. */
 .jarvis-wave { width: min(420px, 90vw); margin: 2px auto 0; pointer-events: none; }
 .vw-canvas { display: block; }
+
+.m-hist-err { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: rgba(255,138,61,.08); border: 1px solid rgba(255,138,61,.35); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--text); }
+.m-hist-err code { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.m-hist-err button { margin-left: auto; background: var(--accent); border: none; color: #fff; border-radius: 8px; padding: 5px 12px; font-size: 12px; }

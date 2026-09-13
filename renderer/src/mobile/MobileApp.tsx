@@ -643,6 +643,7 @@ function Chat({ t, project, onBack, onPatch, connected }: any) {
   const [msgs, setMsgs] = useState<any[]>([]);
   const [text, setText] = useState(''); const [busy, setBusy] = useState(false);
   const [showSet, setShowSet] = useState(false);
+  const [histErr, setHistErr] = useState('');
   const [hasOaiKey, setHasOaiKey] = useState<boolean | null>(null);
   const [codexConn, setCodexConn] = useState(false); // overlay de login do Codex CLI
   const [oaiInput, setOaiInput] = useState('');
@@ -834,8 +835,13 @@ function Chat({ t, project, onBack, onPatch, connected }: any) {
     { const c = mHistCache.get(project.id); if (c) setMsgs(c); }  // cache: mostra na hora
     M().claude.loadHistory(project.id).then((h: any[]) => {
       if (!mounted) return;
-      if (Array.isArray(h) && h.length) { mHistCache.set(project.id, h); setMsgs(h); }
-      else if (!mHistCache.get(project.id)) setMsgs(Array.isArray(h) ? h : []); // vazio de verdade
+      if (Array.isArray(h) && h.length) { mHistCache.set(project.id, h); setMsgs(h); setHistErr(''); }
+      else if (!mHistCache.get(project.id)) {
+        setMsgs(Array.isArray(h) ? h : []); // vazio de verdade…
+        // …ou uma FALHA engolida: mostra o motivo em vez de chat mudo.
+        const err = (window as any).__maestrusLastHistError;
+        if (err) { setHistErr(String(err)); (window as any).__maestrusLastHistError = null; }
+      }
     });
     const off = M().claude.onEvent((e: any) => {
       if (e.projectId && e.projectId !== project.id) return;
@@ -1114,6 +1120,12 @@ function Chat({ t, project, onBack, onPatch, connected }: any) {
       })()}
 
       <div className="m-msgs">
+        {histErr && (
+          <div className="m-hist-err">
+            {t('mobile.histErr')} <code>{histErr.slice(0, 60)}</code>
+            <button onClick={() => { setHistErr(''); M().claude.loadHistory(project.id).then((h: any) => { if (Array.isArray(h) && h.length) { mHistCache.set(project.id, h); setMsgs(h); } }); }}>{t('mobile.retry')}</button>
+          </div>
+        )}
         {visibleMsgs.hidden > 0 && (
           <button className="m-load-more" onClick={() => setWindowSize((w) => w + 200)}>
             {t('chat.loadOlder', { n: Math.min(200, visibleMsgs.hidden) })}

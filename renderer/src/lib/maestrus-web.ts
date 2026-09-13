@@ -1050,8 +1050,14 @@ export function installMaestrusWeb() {
   // hora — convite não pode ficar no histórico/bookmark do navegador.
   try {
     const m = (location.hash || '').match(/[#&]c=([A-Za-z0-9_-]+)/);
-    if (m) {
-      const code = m[1];
+    // Código PENDENTE de uma visita anterior: o join falhou (host offline,
+    // tela de login no meio) e o hash já tinha sido consumido — o usuário
+    // logava e "não acontecia nada", tinha que abrir o link de novo. Agora o
+    // código espera no sessionStorage até UM join dar certo.
+    const pending = (() => { try { return sessionStorage.getItem('maestrus_pending_invite'); } catch { return null; } })();
+    if (m || pending) {
+      const code = m ? m[1] : (pending as string);
+      try { sessionStorage.setItem('maestrus_pending_invite', code); } catch {}
       history.replaceState(null, '', location.pathname + location.search);
       // Estado exposto pra UI: enquanto 'joining', a tela mostra spinner — sem
       // isto o app abria a tela de LOGIN por cima de um join em andamento e o
@@ -1060,7 +1066,11 @@ export function installMaestrusWeb() {
       _hashJoinPromise = new Promise((resolve) => {
         setTimeout(() => {
           joinInvite(code)
-            .then((r) => { _hashJoin = r && r.ok ? 'done' : 'failed'; resolve(r); })
+            .then((r) => {
+              _hashJoin = r && r.ok ? 'done' : 'failed';
+              if (r && r.ok) { try { sessionStorage.removeItem('maestrus_pending_invite'); } catch {} }
+              resolve(r);
+            })
             .catch(() => { _hashJoin = 'failed'; resolve(null); });
         }, 250);
       });
@@ -1616,11 +1626,16 @@ export function installMaestrusWeb() {
         catch (e: any) {
           // Host dormindo/di trocado → NÃO devolve [] cru (a UI mostraria "chat
           // vazio" e o usuário acha que perdeu a conversa). Acorda o host e tenta
-          // 1x; só então desiste com [].
-          if (String(e && e.message || '').includes('target-offline')) {
+          // 1x; só então desiste — e NUNCA em silêncio: o erro real (acesso
+          // negado? hello? timeout?) vai pro console e pra UI, senão cada chat
+          // vazio vira uma sessão de adivinhação.
+          const msg = String(e && e.message || e);
+          if (msg.includes('target-offline')) {
             const ok = await ensureHost(r.hostId);
             if (ok && link) return link.rpc('claude.loadHistory', { projectId: r.projectId }, 30000).catch(() => []);
           }
+          console.error('[maestrus] loadHistory falhou:', projectId, msg);
+          (window as any).__maestrusLastHistError = msg;
           return [];
         }
       },
