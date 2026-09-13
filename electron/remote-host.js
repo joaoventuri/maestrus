@@ -338,7 +338,7 @@ function buildCompactPrompt(focus) {
   );
 }
 
-async function handleRpc(f, reply, fail) {
+async function handleRpc(f, reply, fail, viaTeamRoom = false) {
   const { channel, payload, from, shareClaims } = f;
 
   // Registra/atualiza o subscriber COM escopo. shareClaims presente = guest de
@@ -391,9 +391,16 @@ async function handleRpc(f, reply, fail) {
         if (channel !== 'projects.list' && targetPid && !bound.pids.has(targetPid)) return fail('acesso-negado');
         if (channel === 'projects.list') return reply(safeProjects().filter((p) => bound.pids.has(p.id)));
       }
+    } else if (!viaTeamRoom) {
+      // Sala da CONTA: o relay só aceita device com token da conta do dono —
+      // é a autenticação de sempre, anterior ao convite. A régua do hello vale
+      // SÓ para a sala do convite (room+proof circulam com os convidados);
+      // exigi-la aqui cegava o próprio desktop do dono, que não tem o segredo
+      // do convite e portanto não tem como provar fullMac.
+      subscribers.set(from, { pids: null, write: true });
     } else if (activeGrants().length > 0) {
-      // A sala TEM convites com escopo → device sem hello verificado não é
-      // mais tratado como "da casa". ping passa (health-check), o resto exige
+      // A sala do CONVITE tem grants com escopo → device sem hello verificado
+      // não é tratado como "da casa". ping passa (health-check), o resto exige
       // hello — inclusive os devices do dono, que provam com o fullMac.
       if (channel === 'ping') return reply({ ok: true, helloRequired: true });
       if (channel === 'projects.list') return reply([]);
@@ -1076,7 +1083,7 @@ function startTeamRoom(url) {
     role: 'host',
     WebSocketImpl,
     hostInfo: hostInfo(),
-    onRpcRequest: (f, reply, fail) => { if (f && f.from) linkOf.set(f.from, tl); return handleRpc(f, reply, fail); },
+    onRpcRequest: (f, reply, fail) => { if (f && f.from) linkOf.set(f.from, tl); return handleRpc(f, reply, fail, true); },
     onPresence: (f) => {
       if (!f || !f.deviceId) return;
       if (f.online === false) {
