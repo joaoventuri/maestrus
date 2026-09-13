@@ -643,7 +643,11 @@ const PERMS: { id: string; icon: any; key: string }[] = [
   { id: 'bypassPermissions', icon: ShieldOff, key: 'bypass' },
 ];
 
-function Chat({ t, project, onBack, onPatch, connected, guest }: any) {
+function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any) {
+  // O acesso por e-mail entra DEPOIS do boot (o pai já leu invite.state antes
+  // do join) — então a conversa confere na hora se está numa sala com escopo.
+  const [guest, setGuest] = useState<boolean>(!!guestProp);
+  useEffect(() => { (M() as any).invite?.state?.().then((st: any) => setGuest(!!(guestProp || st?.client?.scoped))).catch(() => {}); }, [guestProp]);
   const { lang, setLang } = useT();
   const [msgs, setMsgs] = useState<any[]>([]);
   const [text, setText] = useState(''); const [busy, setBusy] = useState(false);
