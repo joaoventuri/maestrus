@@ -735,6 +735,15 @@ async function doResume(): Promise<any> {
 // A criptografia e o parse moram em invite-web.ts (espelho de electron/invite.js,
 // testado contra ele). Aqui fica só o que é de conexão.
 const LS_INVITE = 'maestrus_invite';
+// Nome de PESSOA (equipe) — local por design: identifica QUEM usa este
+// aparelho, então não deve seguir a conta entre dispositivos.
+const LS_USER_NAME = 'maestrus_user_name';
+export function teamName(): string { try { return String(localStorage.getItem(LS_USER_NAME) || '').trim().slice(0, 40); } catch { return ''; } }
+export function setTeamName(n: string) { try { localStorage.setItem(LS_USER_NAME, String(n || '').trim().slice(0, 40)); } catch {} }
+function withTeamName(url: string): string {
+  const n = teamName();
+  return n ? `${url}${url.includes('?') ? '&' : '?'}name=${encodeURIComponent(n)}` : url;
+}
 
 function savedInvite(): any { try { return JSON.parse(localStorage.getItem(LS_INVITE) || 'null'); } catch { return null; } }
 
@@ -743,7 +752,7 @@ function savedInvite(): any { try { return JSON.parse(localStorage.getItem(LS_IN
 async function connectInvite(relayUrl: string, secret: string, name: string | null): Promise<any> {
   try { link?.close(); } catch {}
   hostId = null; hostName = name; cachedProjects = [];
-  startClientLink(await inviteConnectUrl(relayUrl, secret, deviceId(), 'client'), '', true);
+  startClientLink(withTeamName(await inviteConnectUrl(relayUrl, secret, deviceId(), 'client')), '', true);
   const d = Date.now() + 8000;
   while (Date.now() < d && !clientState.connected) await new Promise((r) => setTimeout(r, 200));
   if (!clientState.connected) return { ok: false, error: 'relay_unreachable' };
@@ -1167,6 +1176,10 @@ export function installMaestrusWeb() {
     },
     // Convite: no web só existe o lado CLIENT — o navegador não roda CLI, então
     // não há host pra abrir sala.
+    team: {
+      getName: async () => ({ name: teamName() }),
+      setName: async (n: string) => { setTeamName(n); return { ok: true }; },
+    },
     invite: {
       create: async () => ({ ok: false, error: 'desktop_only' }),
       state: async () => { const i = savedInvite(); return { ok: true, relayUrl: i?.relayUrl || '', host: null, client: i ? { room: '', hostName: i.hostName || null, relayUrl: i.relayUrl } : null }; },
@@ -1439,15 +1452,15 @@ export function installMaestrusWeb() {
         if (projectId === 'maestrus') {
           const ok = await ensureMaestroHost();
           if (!ok || !link) throw new Error('host-starting');
-          return link.rpc('claude.send', { projectId: 'maestrus', message });
+          return link.rpc('claude.send', { projectId: 'maestrus', message, author: teamName() || undefined });
         }
         const r = parseId(projectId); if (!r) throw new Error('sem conexão');
         const online = await ensureHost(r.hostId);
         if (!online || !link) throw new Error('host-starting'); // UI mostra "iniciando…", usuário reenvia
-        try { return await link.rpc('claude.send', { projectId: r.projectId, message }); }
+        try { return await link.rpc('claude.send', { projectId: r.projectId, message, author: teamName() || undefined }); }
         catch (e: any) {
           // host caiu/expirou no meio → resume e tenta de novo uma vez
-          if (String(e && e.message || '').includes('target-offline')) { const ok = await ensureHost(r.hostId); if (ok && link) return link.rpc('claude.send', { projectId: r.projectId, message }); throw new Error('host-starting'); }
+          if (String(e && e.message || '').includes('target-offline')) { const ok = await ensureHost(r.hostId); if (ok && link) return link.rpc('claude.send', { projectId: r.projectId, message, author: teamName() || undefined }); throw new Error('host-starting'); }
           throw e;
         }
       },

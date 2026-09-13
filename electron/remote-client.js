@@ -122,6 +122,9 @@ function ensureLink({ url, token, deviceId, refreshTokenFn }) {
     onPresence: (f) => {
       if (!f.deviceId) return;
       if (f.deviceId === selfHostId) return;   // não me descubro a mim mesmo
+      // Equipe: presença de OUTRO CLIENT (colega na sala) não é host — sem este
+      // guard, o colega entraria na lista de hosts como um "Host" fantasma.
+      if (f.role === 'client') return;
       if (f.online === false) {
         // GRACE: presença pisca em reconexão (host cai e volta em segundos). Não
         // derruba o host + projetos na hora — confirma após 6s. Sem isso a lista
@@ -255,9 +258,12 @@ async function refreshProjects() {
 }
 function listProjects() { return cachedProjects; }
 
+// Equipe: nome de quem usa ESTE device — o host prefixa "Nome: " na mensagem.
+let _authorName = '';
+function setAuthorName(n) { _authorName = String(n || '').trim().slice(0, 40); }
 async function send(remoteId, message) {
   const r = parse(remoteId); if (!r || !link) throw new Error('Sem conexão remota');
-  return link.rpc(r.hostId, 'claude.send', { projectId: r.projectId, message }, 120000);
+  return link.rpc(r.hostId, 'claude.send', { projectId: r.projectId, message, author: _authorName || undefined }, 120000);
 }
 async function loadHistory(remoteId) {
   const r = parse(remoteId); if (!r || !link) return [];
@@ -517,6 +523,7 @@ async function loadHistoryShared(id) { return sharedRpc(id, 'claude.loadHistory'
 async function stopShared(id) { return sharedRpc(id, 'claude.stop', {}, 8000).catch(() => false); }
 
 module.exports = {
+  setAuthorName,
   start, startDiscovery, refreshProjects, listProjects, send, loadHistory, statusOf, statusShared, stopProject, dispatchOneShot, patchProject, createOnHost, uploadSessionToHost, deleteOnHost, isHostConnected, setSelfHostId,
   startShared, listSharedProjects, disconnectShared, sharedRpc, sendShared, loadHistoryShared, stopShared,
   rpc, queueCall, isRemote, isShared, isCloudHost, getHostId, getHosts, hasHost, addHost, updateToken, disconnect, reconnect, getState, isHealthy, setOnState, setOnRemoteEvent, setOnProjectsChanged, setOnIdentityConflict,

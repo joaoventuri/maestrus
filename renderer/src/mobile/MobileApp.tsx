@@ -421,6 +421,10 @@ function QrScanner({ t, onResult, onClose }: any) {
 
 function Connect({ t, onAccount, onLogout }: any) {
   const [code, setCode] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [scan, setScan] = useState(false);
+  // Equipe: seu nome viaja com a presença da sala e assina o que você escreve.
+  const [myName, setMyName] = useState('');
+  useEffect(() => { (M() as any).team?.getName?.().then((r: any) => setMyName(r?.name || '')).catch(() => {}); }, []);
+  function saveName(n: string) { setMyName(n); (M() as any).team?.setName?.(n).catch(() => {}); }
   const [cloud, setCloud] = useState<any[]>([]); const [cloudBusy, setCloudBusy] = useState<string | null>(null);
   // Descoberta por CONTA (igual o desktop): procura as máquinas/instância da
   // conta no relay e conecta sozinho. QR/código vira só alternativa.
@@ -504,6 +508,7 @@ function Connect({ t, onAccount, onLogout }: any) {
         {err && <div className="m-err">{err}</div>}
         <button type="button" className="m-scan-btn" onClick={() => setScan(true)}><QrCode size={18} /> {t('mobile.scanQr')}</button>
         <label className="m-label">{t('mobile.codeLabel')}</label>
+        <input className="m-name" value={myName} onChange={(e) => saveName(e.target.value)} placeholder={t('team.yourName')} maxLength={40} />
         <input className="m-code" value={code} onChange={(e) => setCode(normCode(e.target.value))} placeholder="XXXXXXXX" />
         <p className="m-hint">{t('mobile.codeHint')}</p>
         <button disabled={busy || !code.trim()}>{busy ? t('mobile.connecting') : t('mobile.connect')}</button>

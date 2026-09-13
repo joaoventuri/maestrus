@@ -79,9 +79,21 @@ function createRelay({ port = 0, secret, logger = console, maxFrameBytes = 16 <<
     const prev = room.get(deviceId);
     if (prev && prev.ws !== ws) { try { prev.ws.close(4002, 'replaced'); } catch {} }
 
-    const member = { ws, uid, deviceId, role, info: null, alive: true, claims };
+    // Nome de PESSOA (equipe): vem na query, é público dentro da sala e serve
+    // só pra apresentação ("quem está aqui", autor da mensagem). Sem nome tudo
+    // funciona igual — é opcional por design.
+    const personName = String(q.searchParams.get('name') || '').slice(0, 40);
+    const member = { ws, uid, deviceId, role, name: personName, info: null, alive: true, claims };
     room.set(deviceId, member);
     logger.log(`[relay] + ${role} uid=${uid} dev=${deviceId} (sala=${room.size})`);
+
+    // Presença de MEMBROS (equipe) — só em salas por CONVITE. Nas salas de
+    // conta não: clients antigos tratam qualquer presence online como host e
+    // criariam um "Host" fantasma na lista. Sala de convite nasceu depois do
+    // guard, então não tem client antigo pra confundir.
+    if (claims.viaInvite) {
+      broadcast(room, deviceId, FRAME.PRESENCE, { deviceId, role, name: personName || null, online: true });
+    }
 
     ws.on('pong', () => { member.alive = true; });
 
@@ -134,6 +146,17 @@ function createRelay({ port = 0, secret, logger = console, maxFrameBytes = 16 <<
           send(ws, FRAME.HOST_LIST, { payload: { hosts: listHosts(room) } });
           return;
         }
+        case FRAME.WHO: {
+          // Roster da sala: quem está online agora, com papel e nome. É o que
+          // alimenta o "N pessoas na sala" da equipe. Sem segredo nenhum aqui —
+          // todo mundo listado JÁ está na mesma sala.
+          const members = [];
+          for (const m of room.values()) {
+            members.push({ deviceId: m.deviceId, role: m.role, name: m.name || null, hostName: (m.info && m.info.name) || null });
+          }
+          send(ws, FRAME.WHO, { reqId: f.reqId, payload: { members } });
+          return;
+        }
         case FRAME.PING: { send(ws, FRAME.PONG, {}); return; }
         case FRAME.RPC_REQUEST:
         case FRAME.RPC_RESPONSE:
@@ -158,12 +181,17 @@ function createRelay({ port = 0, secret, logger = console, maxFrameBytes = 16 <<
       if (room.get(deviceId) === member) {
         room.delete(deviceId);
         if (member.role === 'host') {
-          broadcast(room, deviceId, FRAME.PRESENCE, { deviceId, online: false }, 'client');
+          broadcast(room, deviceId, FRAME.PRESENCE, { deviceId, role: 'host', online: false }, 'client');
         } else {
           // Client caiu → avisa os hosts pra removerem este device dos seus
           // subscribers (sem isso, host vaza memória mandando events pra
           // deviceIds mortos, e _send falha em silêncio).
-          broadcast(room, deviceId, FRAME.PRESENCE, { deviceId, online: false }, 'host');
+          broadcast(room, deviceId, FRAME.PRESENCE, { deviceId, role: 'client', online: false }, 'host');
+        }
+        // Equipe (sala por convite): os DEMAIS clients também precisam saber
+        // que um colega saiu — o roster fica vivo sem ninguém perguntar.
+        if (member.claims && member.claims.viaInvite && member.role !== 'host') {
+          broadcast(room, deviceId, FRAME.PRESENCE, { deviceId, role: 'client', online: false }, 'client');
         }
         if (room.size === 0) { rooms.delete(uid); roomProofs.delete(uid); }
       }

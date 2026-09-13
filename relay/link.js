@@ -214,6 +214,11 @@ class RelayLink {
       }
       case FRAME.EVENT: this.opts.onEvent?.(f); return;
       case FRAME.PRESENCE: this.opts.onPresence?.(f); return;
+      case FRAME.WHO: {
+        const w = this.pending.get('__who__');
+        if (w) { clearTimeout(w.timer); this.pending.delete('__who__'); w.resolve(f.payload?.members || []); }
+        break;
+      }
       case FRAME.HOST_LIST: {
         const p = this.pending.get('__hostlist__');
         if (p) { clearTimeout(p.timer); this.pending.delete('__hostlist__'); p.resolve(f.payload?.hosts || []); }
@@ -247,6 +252,16 @@ class RelayLink {
       const timer = setTimeout(() => { this.pending.delete('__hostlist__'); reject(new Error('hostlist-timeout')); }, timeoutMs);
       this.pending.set('__hostlist__', { resolve, reject, timer });
       this._send(FRAME.HOST_LIST, {});
+    });
+  }
+
+  // Roster da sala (equipe): quem está online, com papel e nome. Relay antigo
+  // não conhece o frame → timeout → o chamador degrada pra "sem roster".
+  who(timeoutMs = 4000) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.pending.delete('__who__'); reject(new Error('who-timeout')); }, timeoutMs);
+      this.pending.set('__who__', { resolve, reject, timer });
+      this._send(FRAME.WHO, {});
     });
   }
 

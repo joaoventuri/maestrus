@@ -1017,5 +1017,9 @@
     "leave": "Sair da sala",
     "errCode": "Código inválido.",
     "errExpired": "Esse convite expirou — peça outro."
+  },
+  "team": {
+    "yourName": "Seu nome (aparece pra equipe e assina suas mensagens)",
+    "inRoom": "Na sala"
   }
 }

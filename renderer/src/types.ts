@@ -135,6 +135,7 @@ export interface RemoteHostState {
   running: boolean;
   status: 'idle' | 'connecting' | 'online' | 'offline' | 'error';
   error?: string | null;
+  peers?: Array<{ deviceId: string; name: string | null; since: number }>;
 }
 
 export interface RemoteClientState {

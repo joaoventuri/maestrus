@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Server, Loader2, Wifi, WifiOff, Copy, Check, ShieldCheck, Smartphone, Link2, Trash2, Users, ChevronDown } from 'lucide-react';
+import { Server, Loader2, Wifi, WifiOff, Copy, Check, ShieldCheck, Smartphone, Link2, Trash2, Users, ChevronDown, UserRound } from 'lucide-react';
 import { CloudAccount, RemoteHostState, RemoteClientState } from '../types';
 import { useT } from '../lib/i18n';
 
@@ -35,6 +35,16 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
 
   const [memberWs, setMemberWs] = useState<any[]>([]);
   const [wsBusy, setWsBusy] = useState<number | null>(null);
+
+  // Equipe: seu nome — presença na sala + assinatura "Nome:" nas mensagens.
+  const [myName, setMyName] = useState('');
+  useEffect(() => {
+    (window.maestrus.app as any).getCloudSettings?.().then((r: any) => setMyName(String(r?.settings?.user_name || ''))).catch(() => {});
+  }, []);
+  function saveName(n: string) {
+    setMyName(n);
+    (window.maestrus.app as any).setCloudSetting?.('user_name', n.trim().slice(0, 40)).catch(() => {});
+  }
 
   function refreshInvite() {
     inviteApi?.state?.().then((s: any) => {
@@ -238,6 +248,14 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
           <p>{t('remote.screenSub')}</p>
         </div>
 
+        {/* Equipe: um nome por pessoa. É o que transforma a sala em time —
+            presença com nome e cada mensagem assinada por quem escreveu. */}
+        <div className="remote-name span-2">
+          <UserRound size={15} />
+          <input value={myName} onChange={(e) => saveName(e.target.value)}
+            placeholder={t('team.yourName')} maxLength={40} spellCheck={false} />
+        </div>
+
         <div className="remote-tabs span-2" role="tablist">
           {tabs.map((tb) => (
             <button key={tb.id} role="tab" aria-selected={tab === tb.id}
@@ -289,6 +307,13 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                     <button className="cloud-submit" onClick={genCode} disabled={codeBusy}>
                       {codeBusy ? <Loader2 size={16} className="spin" /> : <><Smartphone size={15} /> {pair && expired ? t('invite.newCode') : t('remote.genCode')}</>}
                     </button>
+                  </div>
+                )}
+
+                {Array.isArray((host as any).peers) && (host as any).peers.length > 0 && (
+                  <div className="remote-peers">
+                    <Users size={13} />
+                    <span>{t('team.inRoom')}: {(host as any).peers.map((p: any) => p.name || p.deviceId.slice(0, 6)).join(', ')}</span>
                   </div>
                 )}
 

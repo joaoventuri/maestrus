@@ -681,6 +681,7 @@ app.whenReady().then(async () => {
   // já aparecer pros outros dispositivos da conta (web/mobile/outro desktop).
   // Pequeno atraso pra a janela e o estado assentarem antes de anunciar.
   setTimeout(() => { maybeAutoHost(); resumeInvites(); autoReconnectShares().catch(() => {}); }, 1500);
+  try { remoteClient.setAuthorName(userName()); } catch {}
   // `maestrus://` — o convite vira link clicável e QR que abre o app já pareando.
   try {
     if (process.defaultApp && process.argv.length >= 2) app.setAsDefaultProtocolClient('maestrus', process.execPath, [path.resolve(process.argv[1])]);
@@ -895,6 +896,8 @@ ipcMain.handle('app:getCloudSettings', async () => {
 });
 ipcMain.handle('app:setCloudSetting', async (_e, { key, value }) => {
   try { const all = projectStore.getSetting('user_settings') || {}; all[key] = value; projectStore.setSetting('user_settings', all); } catch {}
+  // Nome mudou → o client remoto passa a assinar os próximos sends já com ele.
+  if (key === 'user_name') { try { remoteClient.setAuthorName(String(value || '')); } catch {} }
   if (cloud.getAccount()) return cloud.userApi('user_settings', { op: 'set', key, value });
   return { ok: true };
 });
@@ -1704,7 +1707,7 @@ async function startHost() {
     try { remoteHost.stop(); } catch {}
     setTimeout(() => { _identityHealing = false; startHost().catch(() => {}); }, 800);
   };
-  const r = remoteHost.start({ url: t.url, token: t.token, deviceId: cloud.getDeviceId(), refreshTokenFn, onIdentityConflict });
+  const r = remoteHost.start({ url: withName(t.url), token: t.token, deviceId: cloud.getDeviceId(), refreshTokenFn, onIdentityConflict });
   if (_hostRefreshTimer) clearInterval(_hostRefreshTimer);
   _hostRefreshTimer = setInterval(async () => {
     const tok = await refreshTokenFn();
@@ -1788,11 +1791,23 @@ function inviteRelayUrl() {
   try { const u = projectStore.getSetting('relay_url'); if (u) return String(u); } catch {}
   return require('./config').RELAY_URL;
 }
+// Nome de PESSOA (equipe): quem usa esta máquina. Vira presença na sala e
+// prefixo "Nome: " nas mensagens — é o que separa uma sala de equipe de um
+// monte de balões anônimos.
+function userName() {
+  try { const s = projectStore.getSetting('user_settings') || {}; return String(s.user_name || '').trim().slice(0, 40); } catch { return ''; }
+}
+// Anexa o nome à URL de conexão do relay (query pública da sala).
+function withName(url) {
+  const n = userName();
+  if (!n) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}name=${encodeURIComponent(n)}`;
+}
 // URL de conexão do convite: sem token: a autorização é a PROVA de posse do
 // segredo, que vai na query. O RelayLink ainda concatena `&token=` — o relay
 // não valida esse token vazio e cai no caminho de sala por convite.
 function inviteUrl(secret, deviceId, role) {
-  return invite.connectUrl(inviteRelayUrl(), secret, deviceId, role);
+  return withName(invite.connectUrl(inviteRelayUrl(), secret, deviceId, role));
 }
 function getInviteHost() { try { return projectStore.getSetting('invite_host') || null; } catch { return null; } }
 function getInviteClient() { try { return projectStore.getSetting('invite_client') || null; } catch { return null; } }
@@ -1978,7 +1993,7 @@ async function startRelayClient(hostDeviceId, hostName) {
   if (!remoteClient.getState().connected) {
     try { remoteClient.disconnect(); } catch {}
   }
-  const r = remoteClient.start({ url: t.url, token: t.token, deviceId: cdid, hostDeviceId, hostName, refreshTokenFn });
+  const r = remoteClient.start({ url: withName(t.url), token: t.token, deviceId: cdid, hostDeviceId, hostName, refreshTokenFn });
   if (_clientRefreshTimer) clearInterval(_clientRefreshTimer);
   _clientRefreshTimer = setInterval(async () => {
     const tok = await refreshTokenFn();
@@ -2195,7 +2210,7 @@ async function startRelayDiscovery() {
     const nt = await cloud.relayToken('client', cdid);
     return (nt && nt.ok && nt.token) ? nt.token : null;
   };
-  const r = remoteClient.startDiscovery({ url: t.url, token: t.token, deviceId: cdid, refreshTokenFn });
+  const r = remoteClient.startDiscovery({ url: withName(t.url), token: t.token, deviceId: cdid, refreshTokenFn });
   if (_clientRefreshTimer) clearInterval(_clientRefreshTimer);
   _clientRefreshTimer = setInterval(async () => {
     const tok = await refreshTokenFn();
@@ -2219,7 +2234,7 @@ async function startRelayDiscoveryAsHost() {
     const nt = await cloud.relayToken('client', did);
     return (nt && nt.ok && nt.token) ? nt.token : null;
   };
-  const r = remoteClient.startDiscovery({ url: t.url, token: t.token, deviceId: did, refreshTokenFn });
+  const r = remoteClient.startDiscovery({ url: withName(t.url), token: t.token, deviceId: did, refreshTokenFn });
   if (_clientRefreshTimer) clearInterval(_clientRefreshTimer);
   _clientRefreshTimer = setInterval(async () => {
     const tok = await refreshTokenFn();
@@ -2722,7 +2737,13 @@ ipcMain.handle('claude:send', async (_e, { projectId, message }) => {
       throw new Error(`SSH: ${e && e.message ? e.message : e}`);
     }
   }
-  return ptyFor(project).send(project, message);
+  // EQUIPE: o dono também assina o que escreve — mesma convenção "Nome: " que
+  // o host aplica às mensagens dos colegas. Só com nome configurado (opt-in) e
+  // nunca em comando slash (viraria "João: /compact" e o CLI não entenderia).
+  let msg = String(message || '');
+  const _n = userName();
+  if (_n && !msg.trimStart().startsWith('/')) msg = `${_n}: ${msg}`;
+  return ptyFor(project).send(project, msg);
 });
 
 ipcMain.handle('claude:stop', async (_e, projectId) => {

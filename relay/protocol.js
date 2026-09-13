@@ -43,6 +43,7 @@ const FRAME = {
   RPC_RESPONSE: 'rpc-response',   // host → client
   EVENT: 'event',                 // host → client (streaming de claude.onEvent)
   PRESENCE: 'presence',           // relay → membros: host entrou/saiu
+  WHO: 'who',                     // membro → relay → membro: quem está na sala (equipe)
   ERROR: 'error',                 // relay → membro
   PING: 'ping',
   PONG: 'pong',

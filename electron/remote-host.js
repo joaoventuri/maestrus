@@ -70,6 +70,8 @@ let unsub = null;
 const subscribers = new Map();
 const _histCache = new Map(); // projectId → { mtime, size, payload } — reabrir conversa sem re-parsear
 let state = { running: false, status: 'idle', error: null };
+// Equipe: devices de OUTRAS pessoas presentes na sala (via presence do relay).
+const peers = new Map();
 let onState = null;
 let allowBypass = false; // por segurança, controle remoto não bypassa permissões
 
@@ -333,7 +335,14 @@ async function handleRpc(f, reply, fail) {
       case 'claude.send': {
         const p = projectStore.get(payload.projectId);
         if (!p) return fail('Projeto não encontrado');
-        await ptyForRH(p).send(clampForRemote(p), String(payload.message || ''));
+        // EQUIPE: quem escreveu viaja com a mensagem e vira prefixo "Nome: ".
+        // Prefixar AQUI (e não no client) garante consistência: o transcript, o
+        // modelo e todos os devices da sala veem o mesmo autor — e o modelo
+        // passa a saber COM QUEM está falando numa conversa de várias pessoas.
+        let msg = String(payload.message || '');
+        const author = String(payload.author || '').trim().slice(0, 40);
+        if (author && !msg.trimStart().startsWith('/')) msg = `${author}: ${msg}`;
+        await ptyForRH(p).send(clampForRemote(p), msg);
         return reply({ ok: true });
       }
       case 'claude.stop': return reply(claudePty.kill(payload.projectId) || codexPty.kill(payload.projectId));
@@ -671,7 +680,18 @@ function start(opts) {
     // Presence: quando um client cai, remove do set de subscribers. Sem isso,
     // o host continua tentando enviar eventos a deviceIds mortos (swallow
     // silencioso). Bug #2 do remote control diagnosticado anteriormente.
-    onPresence: (f) => { if (f && f.online === false && f.deviceId) subscribers.delete(f.deviceId); },
+    onPresence: (f) => {
+      if (!f || !f.deviceId) return;
+      if (f.online === false) {
+        subscribers.delete(f.deviceId);
+        peers.delete(f.deviceId);
+      } else if (f.role === 'client') {
+        // Roster da equipe: colega entrou na sala. Alimenta o "quem está aqui"
+        // do dono sem nenhuma chamada extra.
+        peers.set(f.deviceId, { deviceId: f.deviceId, name: f.name || null, since: Date.now() });
+      }
+      onState && onState(getState());
+    },
     onStatus: (s) => { state.status = s; onState && onState({ ...state }); },
   });
   // Repassa TODOS os eventos do claude pros clients assinantes.
@@ -728,6 +748,7 @@ function stop() {
   try { unsub && unsub(); } catch {}
   unsub = null;
   subscribers.clear();
+  peers.clear();
   try { link && link.close(); } catch {}
   link = null;
   state = { running: false, status: 'idle', error: null };
@@ -756,7 +777,7 @@ function broadcastProjectRemoved(pid) {
   }
 }
 
-function getState() { return { ...state }; }
+function getState() { return { ...state, peers: Array.from(peers.values()) }; }
 function isHealthy(maxAgeMs = 30000) { return !!(link && link.isHealthy && link.isHealthy(maxAgeMs)); }
 function setOnState(fn) { onState = fn; }
 // Quantos clients ativos estão assinando eventos (usado pelo maestrus-server

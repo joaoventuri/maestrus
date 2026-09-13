@@ -1017,5 +1017,9 @@
     "leave": "Salir de la sala",
     "errCode": "Código inválido.",
     "errExpired": "Esa invitación caducó — pide otra."
+  },
+  "team": {
+    "yourName": "Tu nombre (visible para el equipo y firma tus mensajes)",
+    "inRoom": "En la sala"
   }
 }

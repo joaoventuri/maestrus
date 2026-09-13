@@ -104,6 +104,64 @@ function connect(port, token) {
   const pres = await cli.waitFor((f) => f.type === FRAME.PRESENCE && f.online === false);
   ok(pres.deviceId === 'host-A', 'client recebe presence offline quando host cai');
 
+  // 7) EQUIPE (sala por convite): presença de MEMBROS com nome + roster WHO.
+  // A sala é o hash do segredo; a prova de posse identifica o par — aqui só
+  // interessa o comportamento social: quem entra é anunciado, quem pergunta
+  // "quem está aí" recebe a lista com papéis e nomes.
+  const { connectQuery } = require('../../electron/invite');
+  const teamSecret = 'segredo-da-equipe-12345';
+  const invConnect = (did, role, name) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/relay?${connectQuery(teamSecret, did, role)}&name=${encodeURIComponent(name)}`);
+    const inbox = []; const waiters = [];
+    ws.on('message', (raw) => {
+      const f = parseFrame(raw); if (!f) return;
+      inbox.push(f);
+      for (let i = waiters.length - 1; i >= 0; i--) if (waiters[i].pred(f)) { waiters[i].resolve(f); waiters.splice(i, 1); }
+    });
+    return {
+      ws,
+      open: () => new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej); }),
+      send: (type, fields) => ws.send(frame(type, fields)),
+      waitFor: (pred, ms = 2000) => new Promise((res, rej) => {
+        const hit = inbox.find(pred); if (hit) return res(hit);
+        const w = { pred, resolve: res }; waiters.push(w);
+        setTimeout(() => { const i = waiters.indexOf(w); if (i >= 0) { waiters.splice(i, 1); rej(new Error('timeout waitFor')); } }, ms);
+      }),
+      close: () => ws.close(),
+    };
+  };
+  const dono = invConnect('dev-dono', 'host', 'João');
+  await dono.open();
+  const maria = invConnect('dev-maria', 'client', 'Maria');
+  await maria.open();
+  // colega novo entra → quem JÁ estava na sala fica sabendo, com nome
+  const pedro = invConnect('dev-pedro', 'client', 'Pedro');
+  await pedro.open();
+  const joinP = await maria.waitFor((f) => f.type === FRAME.PRESENCE && f.deviceId === 'dev-pedro' && f.online === true);
+  ok(joinP.role === 'client' && joinP.name === 'Pedro', 'colega que entra é anunciado pra sala com papel e nome');
+  const joinH = await dono.waitFor((f) => f.type === FRAME.PRESENCE && f.deviceId === 'dev-pedro' && f.online === true);
+  ok(joinH.name === 'Pedro', 'host também vê o colega entrar (alimenta o roster do dono)');
+  // WHO: roster completo com os três
+  pedro.send(FRAME.WHO, {});
+  const who = await pedro.waitFor((f) => f.type === FRAME.WHO);
+  const names = (who.payload.members || []).map((m) => m.name).sort();
+  ok(names.join(',') === 'João,Maria,Pedro', `WHO devolve a sala inteira com nomes (veio: ${names.join(',')})`);
+  ok((who.payload.members || []).find((m) => m.deviceId === 'dev-dono').role === 'host', 'WHO distingue host de client');
+  // saída também é anunciada aos colegas
+  pedro.close();
+  const left = await maria.waitFor((f) => f.type === FRAME.PRESENCE && f.deviceId === 'dev-pedro' && f.online === false);
+  ok(left.role === 'client', 'colega que sai é anunciado pros demais clients');
+
+  // 8) COMPAT: sala de CONTA (token) NÃO anuncia client pra client — o client
+  // antigo instalado trata presence online como host e criaria um fantasma.
+  const cliA2 = connect(port, signToken({ uid: 'A', did: 'cli-A2', role: 'client' }, SECRET, 60));
+  await cliA2.open();
+  let ghost = false;
+  try { await cli.waitFor((f) => f.type === FRAME.PRESENCE && f.deviceId === 'cli-A2' && f.online === true, 400); ghost = true; } catch {}
+  ok(!ghost, 'sala de conta NÃO anuncia client novo pra outros clients (compat com apps antigos)');
+  cliA2.close();
+
+  dono.close(); maria.close();
   cli.close(); cliB.close();
   await relay.close();
 
