@@ -991,7 +991,8 @@
     "stop": "Detener",
     "openPanel": "Ejecuciones en segundo plano",
     "noOutput": "sin salida aún…",
-    "truncated": "registro truncado"
+    "truncated": "registro truncado",
+    "globalTitle": "Ejecuciones en segundo plano — en todos los proyectos"
   },
   "invite": {
     "hostTitle": "Vincular sin cuenta",
@@ -1031,6 +1032,8 @@
     "shareActive": "Accesos activos",
     "shareRevoke": "Revocar",
     "shareNone": "Ninguna conversación seleccionada.",
-    "shareProjects": "conversaciones"
+    "shareProjects": "conversaciones",
+    "shareOneHost": "Elige conversaciones de UNA sola máquina por enlace (una invitación pertenece a una sala).",
+    "shareNoRoom": "El host de esas conversaciones aún no tiene sala de invitación — genera una invitación allí primero."
   }
 }

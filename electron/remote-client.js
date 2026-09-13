@@ -298,6 +298,9 @@ async function hrpc(hostId, channel, payload = {}, timeout = 30000) {
     throw e;
   }
 }
+async function teamCreateScoped(hostId, opts) { return hrpc(hostId, 'team.createScoped', opts || {}, 15000); }
+async function teamGrants(hostId) { return hrpc(hostId, 'team.grants', {}, 8000); }
+async function teamRevokeGrant(hostId, id) { return hrpc(hostId, 'team.revokeGrant', { id }, 8000); }
 async function send(remoteId, message) {
   const r = parse(remoteId); if (!r || !link) throw new Error('Sem conexão remota');
   return hrpc(r.hostId, 'claude.send', { projectId: r.projectId, message, author: _authorName || undefined }, 120000);
@@ -563,6 +566,7 @@ async function stopShared(id) { return sharedRpc(id, 'claude.stop', {}, 8000).ca
 module.exports = {
   setAuthorName,
   setTeamHello,
+  teamCreateScoped, teamGrants, teamRevokeGrant,
   start, startDiscovery, refreshProjects, listProjects, send, loadHistory, statusOf, statusShared, stopProject, dispatchOneShot, patchProject, createOnHost, uploadSessionToHost, deleteOnHost, isHostConnected, setSelfHostId,
   startShared, listSharedProjects, disconnectShared, sharedRpc, sendShared, loadHistoryShared, stopShared,
   rpc, queueCall, isRemote, isShared, isCloudHost, getHostId, getHosts, hasHost, addHost, updateToken, disconnect, reconnect, getState, isHealthy, setOnState, setOnRemoteEvent, setOnProjectsChanged, setOnIdentityConflict,

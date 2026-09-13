@@ -681,6 +681,9 @@ app.whenReady().then(async () => {
   // já aparecer pros outros dispositivos da conta (web/mobile/outro desktop).
   // Pequeno atraso pra a janela e o estado assentarem antes de anunciar.
   setTimeout(() => { maybeAutoHost(); resumeInvites(); autoReconnectShares().catch(() => {}); }, 1500);
+  // Execuções em segundo plano de sessões anteriores: os processos escrevem
+  // direto em disco e NÃO morrem com o app — reidrata pra UI voltar a vê-los.
+  try { runStore.rehydrate(); } catch {}
   try { remoteClient.setAuthorName(userName()); } catch {}
   // `maestrus://` — o convite vira link clicável e QR que abre o app já pareando.
   try {
@@ -1890,6 +1893,21 @@ ipcMain.handle('invite:revoke', async () => {
 ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
   const projects = Array.isArray(opts.projects) ? opts.projects.filter(Boolean).map(String) : [];
   if (!projects.length) return { ok: false, error: 'projects_required' };
+  // Projetos REMOTOS (esta máquina é client): quem assina o grant é o HOST
+  // dono deles — roteia o pedido pra lá. Misturar máquinas num link só não
+  // existe: um grant pertence a UMA sala.
+  const remotes = projects.filter((id) => /^remote:/.test(id));
+  if (remotes.length) {
+    if (remotes.length !== projects.length) return { ok: false, error: 'mixed_hosts' };
+    const dids = new Set(remotes.map((id) => id.split(':')[1]));
+    if (dids.size > 1) return { ok: false, error: 'mixed_hosts' };
+    const hostId = [...dids][0];
+    const shortIds = remotes.map((id) => id.split(':').slice(2).join(':'));
+    try {
+      const r = await remoteClient.teamCreateScoped(hostId, { projects: shortIds, write: opts.write !== false, ttlMs: opts.ttlMs });
+      return r && r.ok ? r : { ok: false, error: (r && r.error) || 'host_failed' };
+    } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+  }
   // Garante a sala aberta (reusa o segredo; cria se for a primeira vez).
   let hostInv = getInviteHost();
   if (!hostInv || !hostInv.secret) {
@@ -1926,10 +1944,23 @@ ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
   return { ok: true, code: sc.code, grantId: sc.grantId, expiresAt: sc.expiresAt, url: `${webBase}#c=${sc.code}` };
 });
 ipcMain.handle('invite:grants', async () => {
-  const all = (projectStore.getSetting('invite_grants') || []).filter((g) => g && !g.revoked);
-  return { ok: true, grants: all };
+  const grants = (projectStore.getSetting('invite_grants') || []).filter((g) => g && !g.revoked);
+  // Sendo client: soma os grants dos hosts conectados (com o dono do grant
+  // marcado, pra revogação ir pro lugar certo).
+  try {
+    for (const h of (remoteClient.getHosts ? remoteClient.getHosts() : [])) {
+      try {
+        const r = await remoteClient.teamGrants(h.deviceId);
+        if (r && r.ok) for (const g of r.grants || []) grants.push({ ...g, hostId: h.deviceId, hostName: h.name });
+      } catch {}
+    }
+  } catch {}
+  return { ok: true, grants };
 });
-ipcMain.handle('invite:revokeGrant', async (_e, id) => {
+ipcMain.handle('invite:revokeGrant', async (_e, id, hostId) => {
+  if (hostId) {
+    try { return await remoteClient.teamRevokeGrant(hostId, id); } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+  }
   try {
     const all = projectStore.getSetting('invite_grants') || [];
     for (const g of all) if (g && g.id === id) g.revoked = true;

@@ -991,7 +991,8 @@
     "stop": "Encerrar",
     "openPanel": "Execuções em segundo plano",
     "noOutput": "sem saída ainda…",
-    "truncated": "log truncado"
+    "truncated": "log truncado",
+    "globalTitle": "Execuções em segundo plano — em todos os projetos"
   },
   "invite": {
     "hostTitle": "Parear sem conta",
@@ -1031,6 +1032,8 @@
     "shareActive": "Acessos ativos",
     "shareRevoke": "Revogar",
     "shareNone": "Nenhuma conversa selecionada.",
-    "shareProjects": "conversas"
+    "shareProjects": "conversas",
+    "shareOneHost": "Escolha conversas de UMA máquina só por link (um convite pertence a uma sala).",
+    "shareNoRoom": "O host dessas conversas ainda não tem sala de convite — gere um convite nele primeiro."
   }
 }

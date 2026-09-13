@@ -150,6 +150,9 @@ const SHARE_WRITE_CHANNELS = new Set([
 // na conta Claude do host (logout desloga o OAuth do dono) ou vazam billing.
 const OWNER_ONLY_CHANNELS = new Set([
   'claude.logout', 'claude.usage', 'claude.version', 'persona.set',
+  // Compartilhamento com escopo: criar/revogar acesso é poder de dono. Um
+  // convidado (de share OU de grant) jamais emite convites da sala.
+  'team.createScoped', 'team.grants', 'team.revokeGrant',
   // Contas do Claude do host: trocar/criar/remover afeta TODAS as conversas
   // da máquina e mexe no OAuth do dono. Nunca para um convidado de share.
   'claudeProfiles.list', 'claudeProfiles.status', 'claudeProfiles.setActive',
@@ -406,6 +409,49 @@ async function handleRpc(f, reply, fail) {
         if (meta) { _histCache.set(cacheKey, { mtime: meta.mtime, size: meta.size, payload: clipped }); if (_histCache.size > 40) _histCache.delete(_histCache.keys().next().value); }
         return reply(clipped);
       }
+      // ─── Compartilhamento com ESCOPO, criado REMOTAMENTE pelo dono ──────
+      // O caso real: as conversas vivem NESTA máquina (host), mas o dono está
+      // no notebook (client). O grant precisa ser assinado com o segredo DESTA
+      // sala e referenciar projetos DESTA máquina — então quem cria é o host,
+      // a pedido. (Gerar no client produzia link com ids remote:<host>:<pid>
+      // que o host nunca reconheceria — convidado entrava e via o vazio.)
+      case 'team.createScoped': {
+        const hostInv = (() => { try { return projectStore.getSetting('invite_host') || null; } catch { return null; } })();
+        if (!hostInv || !hostInv.secret) return fail('no_room');
+        const projects = (Array.isArray(payload.projects) ? payload.projects : [])
+          .map(String).filter((pid) => !!projectStore.get(pid));
+        if (!projects.length) return fail('projects_required');
+        let sc;
+        try {
+          sc = inviteLib.createScoped({
+            relayUrl: hostInv.relayUrl || require('./config').RELAY_URL,
+            secret: hostInv.secret,
+            hostName: os.hostname(),
+            projects,
+            write: payload.write !== false,
+            ttlMs: Number(payload.ttlMs) > 0 ? Number(payload.ttlMs) : undefined,
+          });
+        } catch (e) { return fail(String(e && e.message || e)); }
+        try {
+          const all = projectStore.getSetting('invite_grants') || [];
+          all.push({ id: sc.grantId, p: projects, w: payload.write !== false, e: sc.expiresAt, createdAt: Date.now() });
+          projectStore.setSetting('invite_grants', all);
+        } catch {}
+        return reply({ ok: true, code: sc.code, grantId: sc.grantId, expiresAt: sc.expiresAt, url: `${require('./config').BASE}/app#c=${sc.code}` });
+      }
+      case 'team.grants': {
+        const all = (projectStore.getSetting('invite_grants') || []).filter((g) => g && !g.revoked);
+        return reply({ ok: true, grants: all });
+      }
+      case 'team.revokeGrant': {
+        try {
+          const all = projectStore.getSetting('invite_grants') || [];
+          for (const g of all) if (g && g.id === String(payload.id)) g.revoked = true;
+          projectStore.setSetting('invite_grants', all);
+        } catch {}
+        return reply({ ok: true });
+      }
+
       case 'claude.send': {
         const p = projectStore.get(payload.projectId);
         if (!p) return fail('Projeto não encontrado');

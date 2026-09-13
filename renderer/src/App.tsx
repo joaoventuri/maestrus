@@ -14,6 +14,7 @@ import ModePicker from './components/ModePicker';
 import LinkPreview from './components/LinkPreview';
 import Logo from './components/Logo';
 import UpdateBanner from './components/UpdateBanner';
+import GlobalRunsIndicator from './components/GlobalRunsIndicator';
 import TitleBar from './components/TitleBar';
 import Splash from './components/Splash';
 import { setDiscoveredModels } from './lib/model-info';
@@ -443,6 +444,7 @@ export default function App() {
       )}
       {!isWeb && <TitleBar />}
       <UpdateBanner />
+      <GlobalRunsIndicator />
       {isDemo && (
         <div className="demo-banner">
           <strong>{t('demo.title')}</strong> — {t('demo.body', { cmd: 'npm run dev' })}

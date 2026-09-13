@@ -83,3 +83,40 @@ test('list filtra por projeto e ordena do mais novo', async () => {
   assert.ok(l[0].startedAt >= l[1].startedAt, 'deveria vir do mais recente');
   assert.ok(l.every((x) => x.projectId === 'p-list'));
 });
+
+test('sobrevive ao PROCESSO que o criou: reidrata do disco e ainda para pelo pid', async (t) => {
+  if (process.platform === 'win32') return t.skip('cenario POSIX');
+  // Outro processo node cria o run e MORRE — como um turno (ou o proprio app)
+  // encerrando. O run tem que continuar vivo, reaparecer via rehydrate() e o
+  // stop() tem que funcionar mesmo sem o handle (so pelo pid do grupo).
+  const os = require('os');
+  const fs = require('fs');
+  const path = require('path');
+  const { execFileSync } = require('child_process');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mrs-'));
+  const script = `
+    process.env.MAESTRUS_HOME = ${JSON.stringify(home)};
+    const rs = require(${JSON.stringify(__dirname + '/run-store.js')});
+    const r = rs.start({ projectId: 'px', command: 'sleep 20', label: 'sobrevivente' });
+    console.log(r.id);
+  `;
+  const id = execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' }).trim();
+  assert.ok(id.startsWith('run_'), 'o criador devolveu o id');
+  // o criador ja morreu (execFileSync retornou) — reidrata no NOSSO processo
+  const prevHome = process.env.MAESTRUS_HOME;
+  process.env.MAESTRUS_HOME = home;
+  try {
+    runStore.rehydrate();
+    const r = runStore.get(id);
+    assert.ok(r, 'run reidratado do disco');
+    assert.equal(r.status, 'running', 'continua VIVO depois do criador morrer');
+    assert.ok(r.pid, 'pid preservado');
+    assert.equal(runStore.stop(id).ok, true, 'stop funciona sem handle (pelo pid)');
+    const ok = await until(() => { const x = runStore.get(id); return x && x.status !== 'running'; });
+    assert.ok(ok, 'run encerrou apos o stop');
+    assert.equal(runStore.get(id).status, 'stopped');
+  } finally {
+    process.env.MAESTRUS_HOME = prevHome;
+    try { fs.rmSync(home, { recursive: true, force: true }); } catch {}
+  }
+});

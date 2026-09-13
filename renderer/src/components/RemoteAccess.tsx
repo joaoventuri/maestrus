@@ -56,7 +56,9 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
   const [shareCopied, setShareCopied] = useState(false);
   const [grants, setGrants] = useState<any[]>([]);
   function loadShare() {
-    window.maestrus.projects.list().then((ps: any[]) => setAllProjects((ps || []).filter((p) => !p.cloud && p.id !== 'maestrus' && p.id !== 'starter'))).catch(() => {});
+    // Projetos locais E remotos: no client, as conversas moram no host — o
+    // pedido de grant é roteado pra lá pelo main (um link = uma máquina).
+    window.maestrus.projects.list().then((ps: any[]) => setAllProjects((ps || []).filter((p) => p.id !== 'maestrus' && p.id !== 'starter' && !String(p.id).startsWith('remote:cloud-')))).catch(() => {});
     inviteApi?.grants?.().then((r: any) => setGrants(r?.grants || [])).catch(() => {});
   }
   useEffect(() => { if (shareOpen) loadShare(); }, [shareOpen]);
@@ -70,14 +72,20 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
     try {
       const r = await inviteApi?.createScoped?.({ projects: [...sel], write: shareWrite });
       if (r?.ok && r.url) { setShareUrl(r.url); refreshInvite(); loadShare(); }
-      else setError(t('invite.errCreate'));
+      else setError(r?.error === 'mixed_hosts' ? t('team.shareOneHost')
+        : r?.error === 'no_room' ? t('team.shareNoRoom')
+        : t('invite.errCreate'));
     } finally { setShareBusy(false); }
   }
-  async function revokeGrant(id: string) {
-    await inviteApi?.revokeGrant?.(id).catch(() => {});
+  async function revokeGrant(g: any) {
+    await inviteApi?.revokeGrant?.(g.id, g.hostId).catch(() => {});
     loadShare();
   }
-  function nameOf(pid: string) { return allProjects.find((p) => p.id === pid)?.name || pid.slice(0, 8); }
+  // Grants do host vêm com ids CURTOS; a lista local usa remote:<host>:<id>.
+  function nameOf(pid: string) {
+    const hit = allProjects.find((p) => p.id === pid || String(p.id).endsWith(':' + pid));
+    return hit?.name || pid.slice(0, 8);
+  }
 
   function refreshInvite() {
     inviteApi?.state?.().then((s: any) => {
@@ -409,7 +417,7 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                         {(g.p || []).slice(0, 3).map(nameOf).join(', ')}{(g.p || []).length > 3 ? ` +${g.p.length - 3}` : ''}
                         <em> · {g.w ? t('team.shareWrite') : t('team.shareRead')}</em>
                       </span>
-                      <button className="dev-del" title={t('team.shareRevoke')} onClick={() => revokeGrant(g.id)}><Trash2 size={13} /></button>
+                      <button className="dev-del" title={t('team.shareRevoke')} onClick={() => revokeGrant(g)}><Trash2 size={13} /></button>
                     </div>
                   ))}
                 </div>

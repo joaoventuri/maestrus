@@ -91,6 +91,25 @@ export default function MobileApp() {
   // convite": deixa quem NÃO tem conta chegar na tela de conexão.
   const [inviteJoined, setInviteJoined] = useState(false);
   const [wantInvite, setWantInvite] = useState(false);
+  // Link #c=… em andamento: NÃO mostrar Login por cima (o convidado achava que
+  // o link exigia conta). joining → spinner; failed → tela de conexão manual.
+  const [hashJoin, setHashJoin] = useState<'none' | 'joining' | 'done' | 'failed'>('none');
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const st: any = await (M() as any).invite?.state?.();
+        if (!alive) return;
+        const h = st?.hashJoin || 'none';
+        setHashJoin(h);
+        if (h === 'done') setInviteJoined(true);
+        if (h === 'failed') setWantInvite(true);
+        if (h === 'joining') setTimeout(tick, 500);
+      } catch {}
+    };
+    tick();
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -157,7 +176,7 @@ export default function MobileApp() {
   }, [reconnectingNow]);
 
   let screen;
-  if (!booted) screen = <div className="m-center"><div className="m-spin" /></div>;
+  if (!booted || hashJoin === 'joining') screen = <div className="m-center"><div className="m-spin" /></div>;
   else if (!account && !inviteJoined && !wantInvite && !client.connected) screen = <Login t={t} onDone={setAccount} onInvite={() => setWantInvite(true)} />;
   else if (!client.connected && !everConnectedRef.current && attempting) screen = <div className="m-center"><div className="m-spin" /></div>;
   else if (!client.connected && !everConnectedRef.current) screen = <Connect t={t} onAccount={() => setShowAccount(true)} onLogout={logout} />;

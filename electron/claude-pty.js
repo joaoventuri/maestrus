@@ -195,8 +195,23 @@ function osLabel(fp) {
  * refaz o cache e o turno custa como se o contexto fosse todo novo. Era o que
  * acontecia entre send() e dispatchOneShot().
  */
+// Fato de VIDA deste ambiente que o modelo não tem como adivinhar: o turno é
+// `claude -p` one-shot — TODO processo em background de shell morre quando a
+// resposta termina. O run_background existe exatamente pra isso e o modelo
+// precisa saber, senão lança `&`/nohup, o turno acaba, o build morre no meio e
+// o usuário conclui que "o Maestrus mata tudo quando fecha a conversa".
+// String CONSTANTE de propósito: o sys-append é prefixo de prompt cache.
+const BACKGROUND_DIRECTIVE = ' BACKGROUND EXECUTION IN MAESTRUS: this turn runs as a one-shot process —'
+  + ' anything you start in the shell background (&, nohup, disown, setsid, screen, tmux)'
+  + ' DIES when your reply ends, often mid-work. For ANY process that must outlive your'
+  + ' reply (builds, deploys, dev servers, watchers, long scripts), use the run_background'
+  + ' MCP tool instead: those runs belong to Maestrus, survive turns and app restarts of the'
+  + ' conversation, stream their output, and the user can watch and stop them from the UI.'
+  + ' Check on them with run_list / run_output; stop with run_stop. Never promise to'
+  + ' "keep something running" via plain shell background — it will not survive.';
+
 function buildSysAppend(project, migration, memBlock) {
-  return ASK_GUIDANCE + (migration || '') + (memBlock || '')
+  return ASK_GUIDANCE + BACKGROUND_DIRECTIVE + (migration || '') + (memBlock || '')
     // Estilo de resposta GLOBAL, em todo turno de todo projeto. Vive aqui (e não
     // num CLAUDE.md) porque o --append-system-prompt é reinjetado a cada spawn:
     // sobrevive a reset de sessão, /compact e conversa nova.

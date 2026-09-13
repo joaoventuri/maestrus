@@ -761,6 +761,8 @@ function savedInvite(): any { try { return JSON.parse(localStorage.getItem(LS_IN
 
 // Sessão de equipe deste tab: sid devolvido pelo team.hello do host.
 let _teamSid: string | null = null;
+// Join disparado pelo link #c=… — a UI espera por ele antes de decidir a tela.
+let _hashJoin: 'none' | 'joining' | 'done' | 'failed' = 'none';
 
 // Apresenta-se ao host: "da casa" (fullMac, quando temos o segredo) ou grant
 // com escopo (convite v2). Sem convite salvo é no-op — conexões por conta não
@@ -1013,7 +1015,15 @@ export function installMaestrusWeb() {
     if (m) {
       const code = m[1];
       history.replaceState(null, '', location.pathname + location.search);
-      setTimeout(() => { joinInvite(code).catch(() => {}); }, 250);
+      // Estado exposto pra UI: enquanto 'joining', a tela mostra spinner — sem
+      // isto o app abria a tela de LOGIN por cima de um join em andamento e o
+      // convidado achava que o link exigia conta.
+      _hashJoin = 'joining';
+      setTimeout(() => {
+        joinInvite(code)
+          .then((r) => { _hashJoin = r && r.ok ? 'done' : 'failed'; })
+          .catch(() => { _hashJoin = 'failed'; });
+      }, 250);
     }
   } catch {}
   const noop = async () => ({ ok: false });
@@ -1236,7 +1246,7 @@ export function installMaestrusWeb() {
     },
     invite: {
       create: async () => ({ ok: false, error: 'desktop_only' }),
-      state: async () => { const i = savedInvite(); return { ok: true, relayUrl: i?.relayUrl || '', host: null, client: i ? { room: '', hostName: i.hostName || null, relayUrl: i.relayUrl } : null }; },
+      state: async () => { const i = savedInvite(); return { ok: true, relayUrl: i?.relayUrl || '', hashJoin: _hashJoin, host: null, client: i ? { room: i.room || '', hostName: i.hostName || null, relayUrl: i.relayUrl } : null }; },
       revoke: async () => ({ ok: true }),
       join: async (code: string) => joinInvite(code),
       leave: async () => {

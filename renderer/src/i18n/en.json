@@ -991,7 +991,8 @@
     "stop": "Stop",
     "openPanel": "Background runs",
     "noOutput": "no output yet…",
-    "truncated": "log truncated"
+    "truncated": "log truncated",
+    "globalTitle": "Background runs — across all projects"
   },
   "invite": {
     "hostTitle": "Pair without an account",
@@ -1031,6 +1032,8 @@
     "shareActive": "Active access",
     "shareRevoke": "Revoke",
     "shareNone": "No conversation selected.",
-    "shareProjects": "conversations"
+    "shareProjects": "conversations",
+    "shareOneHost": "Pick conversations from ONE machine per link (an invite belongs to one room).",
+    "shareNoRoom": "The host of those conversations has no invite room yet — generate an invite there first."
   }
 }

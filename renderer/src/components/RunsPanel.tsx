@@ -54,14 +54,26 @@ function elapsed(r: BackgroundRun) {
   return m < 60 ? `${m}min` : `${Math.floor(m / 60)}h${m % 60}`;
 }
 
-export default function RunsPanel({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+// `projectId` ausente = modo GLOBAL: todas as execuções de todos os projetos,
+// cada uma com o nome do projeto — é o painel do indicador do topo.
+export default function RunsPanel({ projectId, onClose, global = false }: { projectId?: string; onClose: () => void; global?: boolean }) {
   const { t } = useT();
   const [runs, setRuns] = useState<BackgroundRun[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
+  const [projNames, setProjNames] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!global) return;
+    window.maestrus.projects.list().then((ps: any[]) => {
+      const m: Record<string, string> = {};
+      for (const pr of ps || []) m[pr.id] = pr.name;
+      setProjNames(m);
+    }).catch(() => {});
+  }, [global]);
 
   const load = useCallback(async () => {
-    try { setRuns(await window.maestrus.runs.list(projectId) || []); } catch {}
+    try { setRuns(await window.maestrus.runs.list(projectId as any) || []); } catch {}
   }, [projectId]);
 
   useEffect(() => {
@@ -77,7 +89,7 @@ export default function RunsPanel({ projectId, onClose }: { projectId: string; o
   }
 
   return (
-    <aside className="runs-panel">
+    <aside className={`runs-panel ${global ? 'global' : ''}`}>
       <header className="runs-panel-head">
         <Cpu size={14} />
         <span>{t('runs.title') || 'Segundo plano'}</span>
@@ -95,6 +107,9 @@ export default function RunsPanel({ projectId, onClose }: { projectId: string; o
                 {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                 <span className={`run-dot ${r.status}`} />
                 <span className="run-label" title={r.command}>{r.label}</span>
+                {global && (r as any).projectId && (
+                  <span className="run-proj">{projNames[(r as any).projectId] || (r as any).projectId.slice(0, 8)}</span>
+                )}
                 <span className="run-meta">{statusLabel(r.status, t)} · {elapsed(r)}</span>
               </button>
 
