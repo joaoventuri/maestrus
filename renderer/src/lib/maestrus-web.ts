@@ -773,11 +773,17 @@ let _hashJoin: 'none' | 'joining' | 'done' | 'failed' = 'none';
 let _hashJoinPromise: Promise<any> | null = null;
 async function awaitHashJoin() { if (_hashJoinPromise) { try { await _hashJoinPromise; } catch {} } }
 
+// Credencial da sala ATUAL — setada ANTES do connect. O bug que ela mata: o
+// teamHello lia o localStorage, mas o convite só é SALVO depois do join
+// terminar — durante o join ele não achava credencial (ou achava uma VELHA de
+// outra sala) e nunca se apresentava; o host negava tudo e a lista vinha vazia.
+let _activeInviteCred: any = null;
+
 // Apresenta-se ao host: "da casa" (fullMac, quando temos o segredo) ou grant
-// com escopo (convite v2). Sem convite salvo é no-op — conexões por conta não
+// com escopo (convite v2). Sem credencial é no-op — conexões por conta não
 // mudam em nada.
 async function teamHello(l?: any): Promise<void> {
-  const inv = savedInvite();
+  const inv = _activeInviteCred || savedInvite();
   const lk = l || link;
   if (!inv || !lk || !lk.hostId) return;
   let payload: any = null;
@@ -821,6 +827,7 @@ async function joinInvite(code: string): Promise<any> {
   const p = parseInvite(code);
   if (!p.ok) return { ok: false, error: p.error };
   const conn = p.scoped ? { room: p.room, proof: p.proof } : { secret: p.secret };
+  _activeInviteCred = p.scoped ? { grant: p.grant, grantSig: p.grantSig } : { secret: p.secret };
   const r = await connectInvite(p.relayUrl, conn, p.hostName);
   // Só persiste convite que FUNCIONOU: guardar um que não conecta faria o app
   // insistir nele em todo boot e nunca cair no caminho da conta.
@@ -840,6 +847,7 @@ async function resumeInvite(): Promise<any> {
   // Sala já viva → não derruba pra "reconectar": connectInvite fecha o link, e
   // fechar um link saudável a cada wake era metade do pisca conecta/desconecta.
   if (link && link.isOpen() && clientState.connected && hostId) return { ok: true, already: true };
+  _activeInviteCred = inv.secret ? { secret: inv.secret } : { grant: inv.grant, grantSig: inv.grantSig };
   return connectInvite(inv.relayUrl, inv.secret ? { secret: inv.secret } : { room: inv.room, proof: inv.proof }, inv.hostName || null);
 }
 
@@ -1293,6 +1301,7 @@ export function installMaestrusWeb() {
       revoke: async () => ({ ok: true }),
       join: async (code: string) => joinInvite(code),
       leave: async () => {
+        _activeInviteCred = null;
         try { localStorage.removeItem(LS_INVITE); } catch {}
         try { link?.close(); } catch {}
         link = null; hostId = null; cachedProjects = [];
@@ -1307,6 +1316,7 @@ export function installMaestrusWeb() {
       joinInvite: async (code: string) => joinInvite(code),
       inviteState: async () => { const i = savedInvite(); return { ok: true, client: i ? { hostName: i.hostName || null, relayUrl: i.relayUrl } : null }; },
       leaveInvite: async () => {
+        _activeInviteCred = null;
         try { localStorage.removeItem(LS_INVITE); } catch {}
         try { link?.close(); } catch {}
         link = null; hostId = null; cachedProjects = [];

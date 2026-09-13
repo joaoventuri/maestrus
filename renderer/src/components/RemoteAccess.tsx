@@ -408,7 +408,7 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
 
               <label className="cloud-field" style={{ maxWidth: 320 }}>
                 <span>{t('team.emailLabel')}</span>
-                <input value={shareEmail} onChange={(e) => { setShareEmail(e.target.value); setShareUrl(null); }}
+                <input value={shareEmail} onChange={(e) => setShareEmail(e.target.value)}
                   placeholder="colega@empresa.com" type="email" spellCheck={false} />
               </label>
 
@@ -417,20 +417,24 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                 <button className={`remote-tab ${!shareWrite ? 'active' : ''}`} onClick={() => { setShareWrite(false); setShareUrl(null); }}>{t('team.shareRead')}</button>
               </div>
 
-              {shareUrl ? (
+              {shareUrl && (
                 <div className="remote-pair">
                   <div className="remote-qr"><QRCodeSVG value={shareUrl} size={148} includeMargin /></div>
                   <button className="remote-code long" onClick={() => { navigator.clipboard?.writeText(shareUrl); setShareCopied(true); setTimeout(() => setShareCopied(false), 1500); }}>
                     <code>{shareUrl.slice(0, 34)}…</code>{shareCopied ? <Check size={14} /> : <Copy size={14} />}
                   </button>
                   <div className="cloud-hint">{t('team.shareLink')}</div>
-                  {shareNote && <div className="cloud-hint" style={{ color: 'var(--accent)' }}>{shareNote}</div>}
                 </div>
-              ) : (
-                <button className="cloud-submit" style={{ maxWidth: 320 }} onClick={genShare} disabled={shareBusy || !sel.size} title={!sel.size ? t('team.shareNone') : ''}>
-                  {shareBusy ? <Loader2 size={16} className="spin" /> : <><Link2 size={15} /> {t('team.shareGen')}</>}
-                </button>
               )}
+              {shareNote && <div className="cloud-hint" style={{ color: 'var(--accent)' }}>{shareNote}</div>}
+              {/* O botão fica SEMPRE visível (com e-mail ele também envia): antes
+                  ele sumia depois de gerar o link, e digitar o e-mail "não fazia
+                  nada" porque não havia mais ação na tela. */}
+              <button className="cloud-submit" style={{ maxWidth: 320 }} onClick={genShare} disabled={shareBusy || !sel.size} title={!sel.size ? t('team.shareNone') : ''}>
+                {shareBusy ? <Loader2 size={16} className="spin" />
+                  : shareEmail.trim() ? <><Link2 size={15} /> {t('team.shareGenEmail')}</>
+                  : <><Link2 size={15} /> {t('team.shareGen')}</>}
+              </button>
 
               {grants.length > 0 && (
                 <div className="share-grants">

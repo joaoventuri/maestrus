@@ -1048,6 +1048,7 @@
     "aiOpenLink": "Abrir enlace de login",
     "aiPasteCode": "Pega el código aquí",
     "aiSend": "Confirmar código",
-    "aiPending": "Login iniciado pero no terminado — conéctate de nuevo."
+    "aiPending": "Login iniciado pero no terminado — conéctate de nuevo.",
+    "shareGenEmail": "Generar y enviar por e-mail"
   }
 }
