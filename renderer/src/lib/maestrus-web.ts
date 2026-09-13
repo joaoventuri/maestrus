@@ -735,6 +735,10 @@ async function freshClientToken(): Promise<string | null> {
 
 // Reconecta do pareamento salvo (até 15 dias) — não desloga ao fechar a aba.
 async function doResume(): Promise<any> {
+  await awaitHashJoin();
+  // Sala de convite salva GANHA da conta: o usuário escolheu aquela sala; a
+  // descoberta não pode sequestrar a conexão. Sair é explícito (leaveInvite).
+  if (savedInvite()) return resumeInvite();
   const a = getAccount(); if (!a) return { ok: false };
   const saved = loadSavedRemote();
   if (!saved) return { ok: false };
@@ -761,8 +765,13 @@ function savedInvite(): any { try { return JSON.parse(localStorage.getItem(LS_IN
 
 // Sessão de equipe deste tab: sid devolvido pelo team.hello do host.
 let _teamSid: string | null = null;
-// Join disparado pelo link #c=… — a UI espera por ele antes de decidir a tela.
+// Join disparado pelo link #c=… — a UI espera por ele antes de decidir a tela,
+// e TODOS os caminhos de conexão aguardam a promessa antes de agir: sem isso a
+// descoberta da conta corria em paralelo, conectava no container e FECHAVA o
+// link da sala no meio do join ("mostra só conectado ao Maestrus Cloud").
 let _hashJoin: 'none' | 'joining' | 'done' | 'failed' = 'none';
+let _hashJoinPromise: Promise<any> | null = null;
+async function awaitHashJoin() { if (_hashJoinPromise) { try { await _hashJoinPromise; } catch {} } }
 
 // Apresenta-se ao host: "da casa" (fullMac, quando temos o segredo) ou grant
 // com escopo (convite v2). Sem convite salvo é no-op — conexões por conta não
@@ -835,6 +844,8 @@ async function resumeInvite(): Promise<any> {
 }
 
 async function doDiscover(): Promise<any> {
+  await awaitHashJoin();
+  if (savedInvite()) return resumeInvite();   // mesma invariante do doResume
   const a = getAccount(); if (!a) return { ok: false, error: 'not_logged_in' };
   // já atachado a uma máquina viva? nada a fazer.
   if (link && hostId && !isCloudHost(hostId) && clientState.connected) return { ok: true, already: true };
@@ -939,6 +950,7 @@ async function preferMachine(): Promise<any> {
 // Concorrentes agora COMPARTILHAM a mesma tentativa em vez de se atropelar.
 let _connectFlight: Promise<any> | null = null;
 async function ensureConnected(): Promise<any> {
+  await awaitHashJoin();
   if (_connectFlight) return _connectFlight;
   _connectFlight = ensureConnectedInner().finally(() => { _connectFlight = null; });
   return _connectFlight;
@@ -1037,11 +1049,13 @@ export function installMaestrusWeb() {
       // isto o app abria a tela de LOGIN por cima de um join em andamento e o
       // convidado achava que o link exigia conta.
       _hashJoin = 'joining';
-      setTimeout(() => {
-        joinInvite(code)
-          .then((r) => { _hashJoin = r && r.ok ? 'done' : 'failed'; })
-          .catch(() => { _hashJoin = 'failed'; });
-      }, 250);
+      _hashJoinPromise = new Promise((resolve) => {
+        setTimeout(() => {
+          joinInvite(code)
+            .then((r) => { _hashJoin = r && r.ok ? 'done' : 'failed'; resolve(r); })
+            .catch(() => { _hashJoin = 'failed'; resolve(null); });
+        }, 250);
+      });
     }
   } catch {}
   const noop = async () => ({ ok: false });
