@@ -1038,6 +1038,16 @@
     "emailLabel": "Or send to a Maestrus e-mail (optional)",
     "emailSent": "Sent to {email} — the conversations will appear when they log in.",
     "emailNotFound": "That e-mail has no maestrus.cloud account — use the link.",
-    "emailFailed": "Couldn't register the delivery — use the link."
+    "emailFailed": "Couldn't register the delivery — use the link.",
+    "aiTitle": "AI for this conversation",
+    "aiHost": "Turns run on the host's Claude account.",
+    "aiMine": "Running on YOUR account:",
+    "aiConnect": "Use my Claude account",
+    "aiUseHost": "Switch back to the host's account",
+    "aiFlowHint": "Open the link, sign in with YOUR Claude account and paste the code here.",
+    "aiOpenLink": "Open login link",
+    "aiPasteCode": "Paste the code here",
+    "aiSend": "Confirm code",
+    "aiPending": "Login started but not finished — connect again."
   }
 }

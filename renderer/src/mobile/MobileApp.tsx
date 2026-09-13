@@ -1004,6 +1004,7 @@ function Chat({ t, project, onBack, onPatch, connected }: any) {
         const ctxK = Math.round(mInfo.contextWindow / 1000);
         return (
         <div className="m-settings">
+          <TeamAiSection t={t} />
           <div className="m-set-sec">
             <div className="m-set-h">{t('mobile.engine')}</div>
             <div className="m-seg m-seg-wrap m-seg-eng">
@@ -1314,6 +1315,88 @@ function MobileToolAcc({ use, result }: { use: any; result?: any }) {
           {resultBody && <pre className={`m-tool-body out ${isError ? 'err' : ''}`}>{resultBody}</pre>}
         </>
       )}
+    </div>
+  );
+}
+
+
+// ─── IA desta conversa: a conta do Claude de QUEM fala ───────────────────────
+// A conversa é uma só (vive no host); a conta que paga o turno é de quem o
+// dispara. Aqui o membro pluga a própria conta: o host cria um perfil só dele
+// e o login é o device-flow do CLI — abre o link, cola o código, pronto.
+function TeamAiSection({ t }: any) {
+  const api = (M() as any).teamAi;
+  const [st, setSt] = useState<any>(null);
+  const [flow, setFlow] = useState<any>(null);      // loginState enquanto ativo
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const refresh = () => api?.status?.().then(setSt).catch(() => {});
+  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    if (!flow?.active) return;
+    const iv = setInterval(async () => {
+      const f = await api?.loginState?.();
+      setFlow(f);
+      if (f?.done) { clearInterval(iv); setFlow(null); setCode(''); refresh(); }
+    }, 1500);
+    return () => clearInterval(iv);
+  }, [flow?.active]);
+
+  if (!api || !st) return null;
+
+  async function connect() {
+    setBusy(true); setErr('');
+    try {
+      const r = await api.loginStart();
+      if (r?.ok === false) { setErr(r.error || 'erro'); return; }
+      setFlow(await api.loginState());
+    } finally { setBusy(false); }
+  }
+  async function sendCode() {
+    if (!code.trim()) return;
+    setBusy(true); setErr('');
+    try { await api.loginCode(code.trim()); } finally { setBusy(false); }
+  }
+  async function useHost() {
+    setBusy(true);
+    try { await api.unbind(); refresh(); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="m-set-sec">
+      <div className="m-set-h">{t('team.aiTitle')}</div>
+      {flow?.active ? (
+        <>
+          <div className="m-set-note">{t('team.aiFlowHint')}</div>
+          {flow.url && (
+            <button className="m-codex-connect" onClick={() => window.open(flow.url, '_blank')}>
+              {t('team.aiOpenLink')}
+            </button>
+          )}
+          <input className="m-name" style={{ marginTop: 8 }} value={code} onChange={(e) => setCode(e.target.value)}
+            placeholder={t('team.aiPasteCode')} spellCheck={false} />
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button className="m-codex-connect" style={{ marginTop: 0, flex: 1 }} onClick={sendCode} disabled={busy || !code.trim()}>{t('team.aiSend')}</button>
+            <button className="m-link" onClick={() => { api.loginCancel(); setFlow(null); }}>{t('common.cancel') || 'Cancelar'}</button>
+          </div>
+        </>
+      ) : st.bound && st.loggedIn ? (
+        <>
+          <div className="m-set-note">{t('team.aiMine')} <strong>{st.email || ''}</strong></div>
+          <button className="m-link" onClick={useHost} disabled={busy}><u>{t('team.aiUseHost')}</u></button>
+        </>
+      ) : (
+        <>
+          <div className="m-set-note">{t('team.aiHost')}</div>
+          <button className="m-codex-connect" onClick={connect} disabled={busy}>
+            {busy ? '…' : t('team.aiConnect')}
+          </button>
+          {st.bound && !st.loggedIn && <div className="m-set-note">{t('team.aiPending')}</div>}
+        </>
+      )}
+      {err && <div className="m-err" style={{ marginTop: 6 }}>{err}</div>}
     </div>
   );
 }

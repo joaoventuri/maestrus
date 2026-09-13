@@ -78,6 +78,10 @@ function enqueue(projectId, item) {
     id: 'q_' + Math.random().toString(16).slice(2, 10) + Date.now().toString(36),
     text,
     attachments: Array.isArray(item.attachments) ? item.attachments : undefined,
+    // Equipe: quem enfileirou e com QUAL conta o turno deve rodar quando
+    // drenar — sem isto a mensagem do colega drenava na conta do host.
+    author: item.author ? String(item.author).slice(0, 40) : undefined,
+    profileId: item.profileId || undefined,
     at: Date.now(),
   };
   const arr = queues.get(projectId) || [];

@@ -524,7 +524,7 @@ function effectivePermissionMode(project) {
 }
 
 let _keychainSynced = false;
-function buildEnv(project) {
+function buildEnv(project, profileId) {
   const env = { ...process.env };
   // "Nenhum" pensamento: nos modelos atuais o único jeito que AINDA desliga de
   // verdade é esta env var (o --effort só regula a intensidade, não desliga).
@@ -536,9 +536,11 @@ function buildEnv(project) {
     _keychainSynced = true;
     try { claudeProfiles.reconcileKeychainToActive(); } catch {}
   }
-  // Perfil de conta ativo (multi-conta): aponta o CLI pro CLAUDE_CONFIG_DIR do
-  // perfil. As sessões (projects/) são compartilhadas via link — mesma conversa.
-  try { Object.assign(env, claudeProfiles.envVars()); } catch {}
+  // Perfil de conta: aponta o CLI pro CLAUDE_CONFIG_DIR do perfil. As sessões
+  // (projects/) são compartilhadas via link — MESMA conversa em todos os
+  // perfis. `profileId` explícito = turno de EQUIPE: cada participante gasta a
+  // PRÓPRIA conta do Claude na conversa compartilhada; sem ele, perfil ativo.
+  try { Object.assign(env, claudeProfiles.envVars(profileId)); } catch {}
   if (process.platform === 'win32') {
     // Garante que sort.exe / find.exe / etc. do Windows venham antes
     // dos equivalentes GNU do git-bash (que quebram com flags estilo "/r").
@@ -597,7 +599,7 @@ function buildEnv(project) {
   return env;
 }
 
-async function send(project, message) {
+async function send(project, message, opts = {}) {
   if (procs.has(project.id)) {
     // Mata o processo travado antes de aceitar nova mensagem (evita órfãos)
     const old = procs.get(project.id);
@@ -737,7 +739,7 @@ async function send(project, message) {
   const proc = spawn(bin, args, {
     cwd: project.codeDir,
     shell: useShell,
-    env: buildEnv(project),
+    env: buildEnv(project, opts.profileId),
     stdio: ['pipe', 'pipe', 'pipe'],
     ...SPAWN_OPTS, // process group próprio: dá pra matar os sub-agents junto
   });

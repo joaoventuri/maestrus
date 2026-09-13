@@ -99,6 +99,22 @@ function activeGrants() {
     return all.filter((g) => g && !g.revoked && (!g.e || Date.now() < g.e));
   } catch { return []; }
 }
+// ─── IA por PARTICIPANTE: cada membro da equipe pode plugar a PRÓPRIA conta
+// do Claude. O turno que ELE dispara roda num perfil (claude-profiles) só
+// dele — mesma conversa, mesmo transcript, contas separadas. A chave é o
+// grant (estável entre devices da mesma pessoa) ou o deviceId.
+function teamAiKeyFor(from) {
+  const bnd = teamBindings.get(from);
+  return bnd && bnd.grantId ? 'g:' + bnd.grantId : 'd:' + from;
+}
+function teamAiMap() { try { return projectStore.getSetting('team_ai_profiles') || {}; } catch { return {}; } }
+function teamAiProfileFor(from) { return teamAiMap()[teamAiKeyFor(from)] || null; }
+function teamAiBind(from, profileId) {
+  const m = teamAiMap();
+  if (profileId) m[teamAiKeyFor(from)] = profileId; else delete m[teamAiKeyFor(from)];
+  try { projectStore.setSetting('team_ai_profiles', m); } catch {}
+}
+
 function timingEq(a, b) {
   const ba = Buffer.from(String(a || '')); const bb = Buffer.from(String(b || ''));
   return ba.length === bb.length && nodeCrypto.timingSafeEqual(ba, bb);
@@ -276,8 +292,10 @@ async function handleRpc(f, reply, fail) {
       if (bound.pids !== null) {
         // Convidado com escopo: MESMA régua default-deny do share guest.
         if (OWNER_ONLY_CHANNELS.has(channel)) return fail('acesso-negado');
+        // Exceção deliberada: team.ai.* mexe SÓ no perfil de Claude do próprio
+        // convidado (plugar a conta dele) — nunca na conta do host.
         const allow = bound.write ? SHARE_WRITE_CHANNELS : SHARE_READ_CHANNELS;
-        if (!allow.has(channel)) return fail('acesso-negado');
+        if (!channel.startsWith('team.ai.') && !allow.has(channel)) return fail('acesso-negado');
         const targetPid = (payload && (payload.projectId || payload.id)) || null;
         if (channel !== 'projects.list' && targetPid && !bound.pids.has(targetPid)) return fail('acesso-negado');
         if (channel === 'projects.list') return reply(safeProjects().filter((p) => bound.pids.has(p.id)));
@@ -421,6 +439,50 @@ async function handleRpc(f, reply, fail) {
         if (meta) { _histCache.set(cacheKey, { mtime: meta.mtime, size: meta.size, payload: clipped }); if (_histCache.size > 40) _histCache.delete(_histCache.keys().next().value); }
         return reply(clipped);
       }
+      // ─── IA por participante: plugar/usar a PRÓPRIA conta do Claude ─────
+      case 'team.ai.status': {
+        const prof = teamAiProfileFor(from);
+        if (!prof) return reply({ ok: true, bound: false });
+        const st = await claudeProfiles.status(prof).catch(() => null);
+        return reply({ ok: true, bound: true, loggedIn: !!(st && st.loggedIn), email: (st && st.email) || null });
+      }
+      case 'team.ai.loginStart': {
+        let prof = teamAiProfileFor(from);
+        if (!prof) {
+          const bnd = teamBindings.get(from);
+          const c = claudeProfiles.create(`Equipe: ${(bnd && bnd.name) || String(from).slice(0, 8)}`);
+          if (!c || !c.ok) return fail('profile_create_failed');
+          prof = c.id;
+          teamAiBind(from, prof);
+        }
+        return reply(claudeProfiles.loginStart(prof));
+      }
+      case 'team.ai.loginState': {
+        // Privacidade: cada um só enxerga o PRÓPRIO fluxo de login.
+        const prof = teamAiProfileFor(from);
+        const st = claudeProfiles.loginState();
+        if (!prof || !st || st.profileId !== prof) return reply({ active: false });
+        return reply(st);
+      }
+      case 'team.ai.loginCode': {
+        const prof = teamAiProfileFor(from);
+        const st = claudeProfiles.loginState();
+        if (!prof || !st || st.profileId !== prof) return fail('no_login_flow');
+        return reply(claudeProfiles.loginCode(String(payload.code || '')));
+      }
+      case 'team.ai.loginCancel': {
+        const prof = teamAiProfileFor(from);
+        const st = claudeProfiles.loginState();
+        if (prof && st && st.profileId === prof) claudeProfiles.loginCancel();
+        return reply({ ok: true });
+      }
+      case 'team.ai.unbind': {
+        const prof = teamAiProfileFor(from);
+        teamAiBind(from, null);
+        if (prof) { try { claudeProfiles.remove(prof); } catch {} }  // perfil era da equipe
+        return reply({ ok: true });
+      }
+
       // ─── Compartilhamento com ESCOPO, criado REMOTAMENTE pelo dono ──────
       // O caso real: as conversas vivem NESTA máquina (host), mas o dono está
       // no notebook (client). O grant precisa ser assinado com o segredo DESTA
@@ -479,7 +541,10 @@ async function handleRpc(f, reply, fail) {
         let msg = String(payload.message || '');
         const author = String(payload.author || '').trim().slice(0, 40);
         if (author && !msg.trimStart().startsWith('/')) msg = `${author}: ${msg}`;
-        await ptyForRH(p).send(clampForRemote(p), msg);
+        // Conta do AUTOR: se este device plugou a própria conta do Claude, o
+        // turno roda no perfil dele — mesma conversa, gasto separado.
+        const prof = teamAiProfileFor(from);
+        await ptyForRH(p).send(clampForRemote(p), msg, prof ? { profileId: prof } : {});
         return reply({ ok: true });
       }
       case 'claude.stop': return reply(claudePty.kill(payload.projectId) || codexPty.kill(payload.projectId));
@@ -510,7 +575,12 @@ async function handleRpc(f, reply, fail) {
       case 'runs.activeCount': return reply(runStore.activeCount(payload.projectId));
       case 'runs.start': return reply(runStore.start({ projectId: payload.projectId, command: payload.command, cwd: payload.cwd, label: payload.label }));
       case 'queue.list': return reply(turnQueue.list(payload.projectId));
-      case 'queue.enqueue': return reply(turnQueue.enqueue(payload.projectId, { text: payload.text, attachments: payload.attachments }));
+      case 'queue.enqueue': {
+        let qt = String(payload.text || '');
+        const qa = String(payload.author || '').trim().slice(0, 40);
+        if (qa && !qt.trimStart().startsWith('/')) qt = `${qa}: ${qt}`;
+        return reply(turnQueue.enqueue(payload.projectId, { text: qt, attachments: payload.attachments, author: qa || undefined, profileId: teamAiProfileFor(from) || undefined }));
+      }
       case 'queue.remove': return reply(turnQueue.remove(payload.projectId, payload.itemId));
       case 'queue.reorder': return reply(turnQueue.reorder(payload.projectId, payload.ids));
       case 'queue.clear': return reply(turnQueue.clear(payload.projectId));

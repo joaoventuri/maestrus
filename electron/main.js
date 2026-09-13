@@ -2810,7 +2810,7 @@ claudePty.onEvent((payload) => {
       if (!next) return;
       const project = projectStore.get(pid);
       if (!project) return;
-      await ptyFor(project).send(project, next.text);
+      await ptyFor(project).send(project, next.text, next.profileId ? { profileId: next.profileId } : {});
     } catch (e) {
       console.warn('[maestrus][queue] drain falhou:', e && e.message);
     }

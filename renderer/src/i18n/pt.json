@@ -1038,6 +1038,16 @@
     "emailLabel": "Ou envie para um e-mail do Maestrus (opcional)",
     "emailSent": "Enviado para {email} — as conversas aparecem quando essa pessoa logar.",
     "emailNotFound": "Esse e-mail não tem conta no maestrus.cloud — use o link.",
-    "emailFailed": "Não consegui registrar o envio — use o link."
+    "emailFailed": "Não consegui registrar o envio — use o link.",
+    "aiTitle": "IA desta conversa",
+    "aiHost": "Os turnos rodam na conta do Claude do host.",
+    "aiMine": "Rodando na SUA conta:",
+    "aiConnect": "Usar minha conta do Claude",
+    "aiUseHost": "Voltar a usar a conta do host",
+    "aiFlowHint": "Abra o link, entre com a SUA conta do Claude e cole o código aqui.",
+    "aiOpenLink": "Abrir link de login",
+    "aiPasteCode": "Cole o código aqui",
+    "aiSend": "Confirmar código",
+    "aiPending": "Login iniciado mas não concluído — conecte de novo."
   }
 }

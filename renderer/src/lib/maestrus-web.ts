@@ -1276,6 +1276,17 @@ export function installMaestrusWeb() {
       getName: async () => ({ name: teamName() }),
       setName: async (n: string) => { setTeamName(n); return { ok: true }; },
     },
+    // IA por participante: plugar a PRÓPRIA conta do Claude na conversa
+    // compartilhada. Tudo roda no HOST (perfil claude-profiles de lá); aqui é
+    // só o controle remoto do fluxo de login por colar-código.
+    teamAi: {
+      status: async () => { try { return await link!.rpc('team.ai.status', {}, 8000); } catch { return { ok: false }; } },
+      loginStart: async () => { try { return await link!.rpc('team.ai.loginStart', {}, 20000); } catch (e: any) { return { ok: false, error: e?.message }; } },
+      loginState: async () => { try { return await link!.rpc('team.ai.loginState', {}, 8000); } catch { return { active: false }; } },
+      loginCode: async (code: string) => { try { return await link!.rpc('team.ai.loginCode', { code }, 15000); } catch (e: any) { return { ok: false, error: e?.message }; } },
+      loginCancel: async () => { try { return await link!.rpc('team.ai.loginCancel', {}, 8000); } catch { return { ok: true }; } },
+      unbind: async () => { try { return await link!.rpc('team.ai.unbind', {}, 8000); } catch (e: any) { return { ok: false, error: e?.message }; } },
+    },
     invite: {
       create: async () => ({ ok: false, error: 'desktop_only' }),
       state: async () => { const i = savedInvite(); return { ok: true, relayUrl: i?.relayUrl || '', hashJoin: _hashJoin, host: null, client: i ? { room: i.room || '', hostName: i.hostName || null, relayUrl: i.relayUrl } : null }; },
