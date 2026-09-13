@@ -47,7 +47,8 @@
     "darkMode": "Modo oscuro",
     "themeTooltip": "Tema actual: {theme}. Haz clic para cambiar.",
     "refresh": "Actualizar",
-    "llmAccounts": "Cuentas LLM"
+    "llmAccounts": "Cuentas LLM",
+    "cloudAccount": "Cuenta Maestrus"
   },
   "empty": {
     "subtitle": "orquestador para Claude Code",
@@ -369,15 +370,15 @@
     "starting": "La instancia en la nube aún se está iniciando — vuelve a enviar tu mensaje en un momento.",
     "powerOn": "Encender",
     "powerOff": "Apagar",
-    "loginTagline": "Inicia sesión en tu cuenta Maestrus Cloud",
-    "connected": "Conectado a Maestrus Cloud",
+    "loginTagline": "Entra con tu cuenta Maestrus",
+    "connected": "Cuenta conectada",
     "email": "Correo",
     "password": "Contraseña",
     "signIn": "Entrar",
     "signOut": "Cerrar sesión",
     "goToPanel": "Ir al panel",
     "noAccount": "¿No tienes cuenta?",
-    "createAt": "Crear en maestrus.io",
+    "createAt": "Crear en maestrus.cloud",
     "errCreds": "Correo o contraseña incorrectos.",
     "errSuspended": "Cuenta suspendida.",
     "errConn": "No pude conectar. Revisa tu internet.",
@@ -461,7 +462,10 @@
     "dom_errNoContainer": "Activa tu instancia en la nube antes de conectar un dominio.",
     "dom_errGeneric": "No se pudo completar ahora. Inténtalo de nuevo en un momento.",
     "dom_proUpsell": "Usa tu propio dominio en tu instancia Maestrus — exclusivo del plan Pro.",
-    "dom_proCta": "Mejorar plan"
+    "dom_proCta": "Mejorar plan",
+    "accountWhy": "Opcional. Sirve para recibir conversaciones compartidas con tu e-mail y encontrar tus máquinas — sin plan, sin cobro.",
+    "sharesLabel": "Compartidos por e-mail",
+    "sharesOn": "activos en este dispositivo"
   },
   "promo": {
     "text": "Maestrus Cloud — sincroniza tus proyectos + IA gestionada en todos tus dispositivos.",

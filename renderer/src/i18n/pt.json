@@ -47,7 +47,8 @@
     "darkMode": "Modo escuro",
     "themeTooltip": "Tema atual: {theme}. Clique pra trocar.",
     "refresh": "Atualizar",
-    "llmAccounts": "Contas LLM"
+    "llmAccounts": "Contas LLM",
+    "cloudAccount": "Conta Maestrus"
   },
   "empty": {
     "subtitle": "orquestrador pra Claude Code",
@@ -369,15 +370,15 @@
     "starting": "A instância na nuvem ainda está iniciando — reenvie sua mensagem em instantes.",
     "powerOn": "Ligar",
     "powerOff": "Desligar",
-    "loginTagline": "Entre na sua conta Maestrus Cloud",
-    "connected": "Conectado ao Maestrus Cloud",
+    "loginTagline": "Entre com sua conta Maestrus",
+    "connected": "Conta conectada",
     "email": "E-mail",
     "password": "Senha",
     "signIn": "Entrar",
     "signOut": "Sair da conta",
     "goToPanel": "Ir para o painel",
     "noAccount": "Não tem conta?",
-    "createAt": "Criar em maestrus.io",
+    "createAt": "Criar em maestrus.cloud",
     "errCreds": "E-mail ou senha incorretos.",
     "errSuspended": "Conta suspensa.",
     "errConn": "Não consegui conectar. Verifique sua internet.",
@@ -461,7 +462,10 @@
     "dom_errNoContainer": "Ative sua instância na nuvem antes de conectar um domínio.",
     "dom_errGeneric": "Não foi possível concluir agora. Tente de novo em instantes.",
     "dom_proUpsell": "Use seu próprio domínio na sua instância Maestrus — exclusivo do plano Pro.",
-    "dom_proCta": "Fazer upgrade"
+    "dom_proCta": "Fazer upgrade",
+    "accountWhy": "Opcional. Serve pra receber conversas que compartilharem com o seu e-mail e pra encontrar suas máquinas — sem plano, sem cobrança.",
+    "sharesLabel": "Compartilhamentos por e-mail",
+    "sharesOn": "ativos neste device"
   },
   "promo": {
     "text": "Maestrus Cloud — sincronize seus projetos + IA gerenciada em todos os seus dispositivos.",

@@ -16,6 +16,7 @@ interface Props {
   onRequirements: () => void;
   onSettings: () => void;
   onLLM?: () => void;
+  onCloud?: () => void;
   onMcp: () => void;
   onPowers?: () => void;
   onRemote: () => void;
@@ -44,7 +45,7 @@ function SourceIcon({ source }: { source: ProjectSource }) {
 }
 
 export default function Sidebar({
-  projects, activeId, onPick, onNew, onRequirements, onSettings, onLLM, onMcp, onPowers, onRemote, onKanban, onStarter, onDelete, onRefresh, onConvAction,
+  projects, activeId, onPick, onNew, onRequirements, onSettings, onLLM, onCloud, onMcp, onPowers, onRemote, onKanban, onStarter, onDelete, onRefresh, onConvAction,
   mode, cloudFirst, clientHostName, clientConnected, clientSyncing, clientHostCount, clientProjectCount,
 }: Props) {
   const maestrus = projects.find((p) => p.id === 'maestrus');
@@ -365,6 +366,11 @@ export default function Sidebar({
         <button className="nav-tool" onClick={onLLM}>
           <Bot size={13} /> {t('nav.llmAccounts')}
         </button>
+        {onCloud && (
+          <button className="nav-tool" onClick={onCloud}>
+            <Cloud size={13} /> {t('nav.cloudAccount')}
+          </button>
+        )}
         <button className="nav-tool" onClick={onSettings}>
           <Settings size={13} /> {t('nav.systemSettings') || 'Ajustes do Sistema'}
         </button>

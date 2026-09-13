@@ -47,7 +47,8 @@
     "darkMode": "Dark mode",
     "themeTooltip": "Current theme: {theme}. Click to switch.",
     "refresh": "Refresh",
-    "llmAccounts": "LLM Accounts"
+    "llmAccounts": "LLM Accounts",
+    "cloudAccount": "Maestrus account"
   },
   "empty": {
     "subtitle": "orchestrator for Claude Code",
@@ -369,15 +370,15 @@
     "starting": "The cloud instance is still starting — send your message again in a moment.",
     "powerOn": "Power on",
     "powerOff": "Power off",
-    "loginTagline": "Sign in to your Maestrus Cloud account",
-    "connected": "Connected to Maestrus Cloud",
+    "loginTagline": "Sign in with your Maestrus account",
+    "connected": "Account connected",
     "email": "E-mail",
     "password": "Password",
     "signIn": "Sign in",
     "signOut": "Sign out",
     "goToPanel": "Go to panel",
     "noAccount": "Don't have an account?",
-    "createAt": "Create at maestrus.io",
+    "createAt": "Create at maestrus.cloud",
     "errCreds": "Wrong e-mail or password.",
     "errSuspended": "Account suspended.",
     "errConn": "Could not connect. Check your internet.",
@@ -461,7 +462,10 @@
     "dom_errNoContainer": "Activate your cloud instance before connecting a domain.",
     "dom_errGeneric": "Could not complete right now. Try again in a moment.",
     "dom_proUpsell": "Use your own domain on your Maestrus instance — exclusive to the Pro plan.",
-    "dom_proCta": "Upgrade"
+    "dom_proCta": "Upgrade",
+    "accountWhy": "Optional. It lets you receive conversations shared with your e-mail and find your machines — no plan, no billing.",
+    "sharesLabel": "E-mail shares",
+    "sharesOn": "active on this device"
   },
   "promo": {
     "text": "Maestrus Cloud — sync your projects + managed AI across all your devices.",
