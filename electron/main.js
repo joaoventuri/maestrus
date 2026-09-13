@@ -684,6 +684,7 @@ app.whenReady().then(async () => {
   // Execuções em segundo plano de sessões anteriores: os processos escrevem
   // direto em disco e NÃO morrem com o app — reidrata pra UI voltar a vê-los.
   try { runStore.rehydrate(); } catch {}
+  try { remoteHost.setEnsureTeamRoom(() => ensureTeamRoom()); } catch {}
   try { remoteClient.setAuthorName(userName()); } catch {}
   // `maestrus://` — o convite vira link clicável e QR que abre o app já pareando.
   try {
@@ -1769,9 +1770,8 @@ ipcMain.handle('app:setLaunchAtLogin', async (_e, on) => {
 function maybeAutoHost(attempt = 0) {
   try {
     if (!(hostAlwaysOn() && cloud.getAccount && cloud.getAccount())) return;
-    // Convite ativo manda: o relay só aceita UMA conexão por deviceId, então
-    // subir o host da conta derrubaria a sala que o usuário abriu de propósito.
-    if (getInviteHost()) return;
+    // (As salas de conta e de convite agora COEXISTEM — remote-host mantém um
+    // link por sala, então o convite não bloqueia mais o host da conta.)
     startHost().then((r) => {
       // Falhou (sem token / rede) → tenta de novo (até 3x, backoff) pra o host
       // realmente subir sozinho no boot mesmo com rede instável.
@@ -1815,16 +1815,21 @@ function inviteUrl(secret, deviceId, role) {
 function getInviteHost() { try { return projectStore.getSetting('invite_host') || null; } catch { return null; } }
 function getInviteClient() { try { return projectStore.getSetting('invite_client') || null; } catch { return null; } }
 
-// Sobe o host na sala do convite. Diferente de startHost(): não pede conta e
-// não renova token (não existe token pra renovar — a prova não expira).
-function startHostViaInvite(secret) {
-  if (!secret) return { ok: false, error: 'no_secret' };
-  if (_hostRefreshTimer) { clearInterval(_hostRefreshTimer); _hostRefreshTimer = null; }
-  try { remoteClient.disconnect(); } catch {}
-  const did = cloud.getDeviceId();
-  // O host passa a ser o juiz de escopo desta sala (team.hello/grants).
-  try { remoteHost.setTeamSecret(secret); } catch {}
-  return remoteHost.start({ url: inviteUrl(secret, did, 'host'), token: '', deviceId: did });
+// Garante a SALA DE EQUIPE aberta — sem tocar na sala da conta. O host vive
+// nas duas ao mesmo tempo (remote-host.startTeamRoom); antes abrir o convite
+// DERRUBAVA a conexão dos devices do dono, e vice-versa.
+function ensureTeamRoom({ rotate = false } = {}) {
+  let hostInv = getInviteHost();
+  if (rotate || !hostInv || !hostInv.secret) {
+    const relayUrl = inviteRelayUrl();
+    const inv = invite.create({ relayUrl, hostName: require('os').hostname(), secret: (!rotate && hostInv && hostInv.secret) || null });
+    hostInv = { secret: inv.secret, room: inv.room, relayUrl, createdAt: Date.now() };
+    try { projectStore.setSetting('invite_host', hostInv); } catch {}
+    if (rotate) { try { projectStore.setSetting('invite_grants', []); } catch {} }
+  }
+  try { remoteHost.setTeamSecret(hostInv.secret); } catch {}
+  try { remoteHost.startTeamRoom(inviteUrl(hostInv.secret, cloud.getDeviceId(), 'host')); } catch {}
+  return hostInv;
 }
 
 // Entra na sala como client. Reusa a descoberta: o relay manda HOST_LIST da
@@ -1855,11 +1860,7 @@ ipcMain.handle('invite:create', async (_e, opts = {}) => {
     });
   } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
   try { projectStore.setSetting('invite_host', { secret: inv.secret, room: inv.room, relayUrl, createdAt: Date.now() }); } catch {}
-  let running = false; try { running = !!remoteHost.getState().running; } catch {}
-  if (!(reuse && running)) {
-    const r = startHostViaInvite(inv.secret);
-    if (!r || r.ok === false) return { ok: false, error: (r && r.error) || 'host_failed' };
-  }
+  ensureTeamRoom();
   return { ok: true, code: inv.code, url: invite.toUrl(inv.code), room: inv.room, expiresAt: inv.expiresAt, hostName: inv.hostName };
 });
 
@@ -1867,7 +1868,8 @@ ipcMain.handle('invite:create', async (_e, opts = {}) => {
 ipcMain.handle('invite:state', async () => {
   const h = getInviteHost();
   const c = getInviteClient();
-  let running = false; try { running = !!remoteHost.getState().running; } catch {}
+  let running = false;
+  try { running = remoteHost.teamRoomActive() || !!remoteHost.getState().running; } catch {}
   return {
     ok: true,
     relayUrl: inviteRelayUrl(),
@@ -1882,7 +1884,7 @@ ipcMain.handle('invite:revoke', async () => {
   try { projectStore.setSetting('invite_host', null); } catch {}
   try { projectStore.setSetting('invite_grants', []); } catch {}   // sala morreu, grants junto
   try { remoteHost.setTeamSecret(null); } catch {}
-  try { remoteHost.stop(); } catch {}
+  try { remoteHost.stopTeamRoom(); } catch {}   // a sala da CONTA fica de pé
   return { ok: true };
 });
 
@@ -1908,21 +1910,8 @@ ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
       return r && r.ok ? r : { ok: false, error: (r && r.error) || 'host_failed' };
     } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
   }
-  // Garante a sala aberta (reusa o segredo; cria se for a primeira vez).
-  let hostInv = getInviteHost();
-  if (!hostInv || !hostInv.secret) {
-    const relayUrl = inviteRelayUrl();
-    const inv = invite.create({ relayUrl, hostName: require('os').hostname() });
-    hostInv = { secret: inv.secret, room: inv.room, relayUrl, createdAt: Date.now() };
-    try { projectStore.setSetting('invite_host', hostInv); } catch {}
-  }
-  let running = false; try { running = !!remoteHost.getState().running; } catch {}
-  if (!running) {
-    const r = startHostViaInvite(hostInv.secret);
-    if (!r || r.ok === false) return { ok: false, error: (r && r.error) || 'host_failed' };
-  } else {
-    try { remoteHost.setTeamSecret(hostInv.secret); } catch {}
-  }
+  // Garante a sala de equipe aberta (reusa o segredo; cria na primeira vez).
+  const hostInv = ensureTeamRoom();
   let sc;
   try {
     sc = invite.createScoped({
@@ -2034,7 +2023,7 @@ ipcMain.handle('invite:leave', async () => {
 // pareamento sobreviver a fechar o app — sem isso o usuário coleta código de
 // novo toda vez.
 function resumeInvites() {
-  try { const h = getInviteHost(); if (h && h.secret) startHostViaInvite(h.secret); } catch {}
+  try { const h = getInviteHost(); if (h && h.secret) ensureTeamRoom(); } catch {}
   try {
     const c = getInviteClient();
     if (c) remoteClient.setTeamHello(buildTeamHello);

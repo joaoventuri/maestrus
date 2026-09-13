@@ -61,6 +61,16 @@ function maybeWebPush(payload) {
 }
 
 let link = null;
+// ─── SEGUNDA SALA (equipe por convite) ──────────────────────────────────────
+// O host precisa viver em DUAS salas ao mesmo tempo: a da conta (os devices do
+// dono, descoberta automática) e a do convite (a equipe). Antes era uma só —
+// criar a sala da equipe DERRUBAVA a conexão dos devices do dono e vice-versa;
+// era o "demorou pra carregar e deu erro" ao gerar o link de acesso.
+let teamLink = null;
+let teamRoomUrl = null;
+// De qual sala cada device fala conosco — o fan-out de eventos responde pela
+// mesma porta em que o device bateu.
+const linkOf = new Map();
 let unsub = null;
 // deviceId -> { pids: Set<string>|null, write: bool }. pids=null → acesso total
 // (device do próprio dono / membro full). pids=Set → guest de share, só recebe
@@ -79,6 +89,8 @@ const subscribers = new Map();
 const inviteLib = require('./invite');
 const nodeCrypto = require('crypto');
 let teamSecret = null;                 // segredo da sala do convite (setado pelo main)
+let _ensureTeamRoomFn = null;          // main injeta: cria/abre a sala e devolve {secret, relayUrl}
+function setEnsureTeamRoom(fn) { _ensureTeamRoomFn = fn; }
 function setTeamSecret(s) { teamSecret = s || null; if (!teamSecret) teamBindings.clear(); }
 const teamBindings = new Map();        // did → { pids:Set|null, write, name, sid, grantId? }
 function activeGrants() {
@@ -416,7 +428,12 @@ async function handleRpc(f, reply, fail) {
       // a pedido. (Gerar no client produzia link com ids remote:<host>:<pid>
       // que o host nunca reconheceria — convidado entrava e via o vazio.)
       case 'team.createScoped': {
-        const hostInv = (() => { try { return projectStore.getSetting('invite_host') || null; } catch { return null; } })();
+        let hostInv = (() => { try { return projectStore.getSetting('invite_host') || null; } catch { return null; } })();
+        // Dono pediu grant e a sala nem existe ainda → cria na hora (o main
+        // injeta o criador). Zero passos manuais no host.
+        if ((!hostInv || !hostInv.secret) && _ensureTeamRoomFn) {
+          try { hostInv = _ensureTeamRoomFn(); } catch {}
+        }
         if (!hostInv || !hostInv.secret) return fail('no_room');
         const projects = (Array.isArray(payload.projects) ? payload.projects : [])
           .map(String).filter((pid) => !!projectStore.get(pid));
@@ -794,7 +811,7 @@ function start(opts) {
     role: 'host',
     WebSocketImpl,
     hostInfo: hostInfo(),
-    onRpcRequest: handleRpc,
+    onRpcRequest: (f, reply, fail) => { if (f && f.from) linkOf.set(f.from, link); return handleRpc(f, reply, fail); },
     refreshTokenFn: opts.refreshTokenFn,
     onIdentityConflict: opts.onIdentityConflict,
     // Presence: quando um client cai, remove do set de subscribers. Sem isso,
@@ -815,9 +832,25 @@ function start(opts) {
     },
     onStatus: (s) => { state.status = s; onState && onState({ ...state }); },
   });
-  // Repassa TODOS os eventos do claude pros clients assinantes.
-  // Limite: relay corta frames > 1MB. Um tool-result com 5MB de output
-  // (saída de Bash, dump SQL, etc.) fechava a conexão. Tronco aqui.
+  ensureEventPipe();
+  link.connect();
+  state = { running: true, status: 'connecting', error: null };
+  onState && onState({ ...state });
+  return { ok: true };
+}
+
+// Envia um evento pro device pela SALA em que ele fala conosco.
+function sendTo(did, channel, payload) {
+  const l = linkOf.get(did) || link || teamLink;
+  if (l) l.sendEvent(did, channel, payload);
+}
+
+// Repassa TODOS os eventos do claude pros clients assinantes. Vive fora do
+// start() porque um host pode existir SÓ na sala da equipe (sem conta).
+// Limite: relay corta frames > 1MB. Um tool-result com 5MB de output
+// (saída de Bash, dump SQL, etc.) fechava a conexão. Tronco aqui.
+function ensureEventPipe() {
+  if (unsub) return;
   const MAX_EVENT_TEXT = 200_000; // ~200KB por evento — cobre output normal
   const MAX_EVENT_INPUT = 50_000;
   unsub = claudePty.onEvent((payload) => {
@@ -849,17 +882,56 @@ function start(opts) {
     const evPid = (p && (p.projectId || (p.project && p.project.id))) || null;
     for (const [did, entry] of subscribers) {
       if (!subCanSeePid(entry, evPid)) continue;
-      try { link.sendEvent(did, 'claude', p); } catch {}
+      try { sendTo(did, 'claude', p); } catch {}
     }
     try { maybeWebPush(p); } catch {}
   });
-  link.connect();
-  state = { running: true, status: 'connecting', error: null };
-  onState && onState({ ...state });
-  return { ok: true };
 }
 
-function refreshProjects() { if (link) link.registerHost(hostInfo()); }
+/**
+ * Entra (também) na sala do CONVITE, sem tocar na sala da conta. Idempotente
+ * por URL; girar o segredo muda a URL e o link antigo é fechado.
+ */
+function startTeamRoom(url) {
+  if (!url) return { ok: false, error: 'url_required' };
+  if (teamLink && teamRoomUrl === url) return { ok: true, already: true };
+  try { teamLink && teamLink.close(); } catch {}
+  const tl = new RelayLink({
+    url, token: '',
+    deviceId: url.match(/[?&]did=([^&]+)/) ? decodeURIComponent(url.match(/[?&]did=([^&]+)/)[1]) : 'host',
+    role: 'host',
+    WebSocketImpl,
+    hostInfo: hostInfo(),
+    onRpcRequest: (f, reply, fail) => { if (f && f.from) linkOf.set(f.from, tl); return handleRpc(f, reply, fail); },
+    onPresence: (f) => {
+      if (!f || !f.deviceId) return;
+      if (f.online === false) {
+        subscribers.delete(f.deviceId);
+        peers.delete(f.deviceId);
+        teamBindings.delete(f.deviceId);
+        linkOf.delete(f.deviceId);
+      } else if (f.role === 'client') {
+        peers.set(f.deviceId, { deviceId: f.deviceId, name: f.name || null, since: Date.now() });
+      }
+      onState && onState(getState());
+    },
+  });
+  teamLink = tl;
+  teamRoomUrl = url;
+  ensureEventPipe();
+  tl.connect();
+  onState && onState(getState());
+  return { ok: true };
+}
+function stopTeamRoom() {
+  try { teamLink && teamLink.close(); } catch {}
+  teamLink = null; teamRoomUrl = null;
+  onState && onState(getState());
+  return { ok: true };
+}
+function teamRoomActive() { return !!(teamLink && teamLink.isHealthy ? teamLink.isHealthy(45000) : teamLink); }
+
+function refreshProjects() { if (link) link.registerHost(hostInfo()); if (teamLink) teamLink.registerHost(hostInfo()); }
 
 // Atualiza o token (o relay_token expira em ~10min; main renova periodicamente
 // pra reconexões continuarem autenticando).
@@ -873,13 +945,16 @@ function stop() {
   teamBindings.clear();
   try { link && link.close(); } catch {}
   link = null;
+  try { teamLink && teamLink.close(); } catch {}
+  teamLink = null; teamRoomUrl = null;
+  linkOf.clear();
   state = { running: false, status: 'idle', error: null };
   onState && onState({ ...state });
   return { ok: true };
 }
 
 function broadcastProjectPatch(updated) {
-  if (!link || subscribers.size === 0 || !updated) return;
+  if ((!link && !teamLink) || subscribers.size === 0 || !updated) return;
   // SANITIZA (safeProject) — antes mandava o objeto CRU do projectStore, vazando
   // codeDir/localPath/ssh que a lista inicial deliberadamente omite. E filtra por
   // escopo do subscriber.
@@ -892,7 +967,7 @@ function broadcastProjectPatch(updated) {
 }
 
 function broadcastProjectRemoved(pid) {
-  if (!link || subscribers.size === 0 || !pid) return;
+  if ((!link && !teamLink) || subscribers.size === 0 || !pid) return;
   for (const [did, entry] of subscribers) {
     if (!subCanSeePid(entry, pid)) continue;
     try { link.sendEvent(did, 'claude', { type: 'project.removed', projectId: pid }); } catch {}
@@ -907,4 +982,4 @@ function setOnState(fn) { onState = fn; }
 function subscriberCount() { return subscribers.size; }
 
 module.exports = {
-  setTeamSecret, start, stop, refreshProjects, updateToken, getState, isHealthy, setOnState, broadcastProjectPatch, subscriberCount };
+  setTeamSecret, startTeamRoom, stopTeamRoom, teamRoomActive, setEnsureTeamRoom, start, stop, refreshProjects, updateToken, getState, isHealthy, setOnState, broadcastProjectPatch, subscriberCount };
