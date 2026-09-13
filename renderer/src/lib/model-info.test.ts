@@ -35,7 +35,9 @@ describe('defaults e registro', () => {
   it('default Anthropic é o alias opus (acompanha o último sozinho)', () => {
     expect(defaultModelForEngine('claude')).toBe('opus');
     expect(defaultModelForEngine(undefined)).toBe('opus');
-    expect(defaultModelForEngine('codex')).toBe('gpt-5-codex');
+    // Set/2026: Codex via ChatGPT usa gpt-5.6-terra; API key fica no 5.2-codex.
+    expect(defaultModelForEngine('codex')).toBe('gpt-5.6-terra');
+    expect(defaultModelForEngine('codex-api')).toBe('gpt-5.2-codex');
   });
   it('Fable 5.1 está no registro com a janela certa', () => {
     expect(MODEL_REGISTRY.find((m) => m.id === 'claude-fable-5-1')).toBeTruthy();

@@ -116,20 +116,35 @@ function ensureProfileDir(id) {
   return dir;
 }
 
+function teamBoundIds() {
+  // Perfis amarrados a um ACESSO de equipe (team_ai_profiles) — a UI marca e
+  // bloqueia usar como "minha" conta: a conta do time não pode virar a ativa
+  // do dono por engano (era o pedido do "bloqueia no meu").
+  try {
+    const projectStore = require('./project-store');
+    return new Set(Object.values(projectStore.getSetting('team_ai_profiles') || {}));
+  } catch { return new Set(); }
+}
+
 function list() {
   const s = readStore();
+  const bound = teamBoundIds();
+  const deco = (p) => ({ ...p, email: p.email || null, teamBound: bound.has(p.id) });
   return {
     ok: true,
     active: s.active,
-    profiles: [{ id: DEFAULT_ID, name: 'Principal', createdAt: 0 }, ...s.profiles],
+    profiles: [deco({ id: DEFAULT_ID, name: 'Principal', createdAt: 0, email: s.defaultEmail || null }), ...s.profiles.map(deco)],
   };
 }
 
 function getActive() { return readStore().active; }
 
-function setActive(id) {
+function setActive(id, opts = {}) {
   const s = readStore();
   if (id !== DEFAULT_ID && !s.profiles.some((p) => p.id === id)) return { ok: false, error: 'not_found' };
+  // Conta amarrada a um acesso de EQUIPE não vira a "minha" ativa por engano —
+  // senão o dono gastava a conta do time sem perceber.
+  if (!opts.force && teamBoundIds().has(id)) return { ok: false, error: 'team_bound' };
   // Antes de trocar: qualquer token no Keychain pertence ao perfil que estava
   // ATIVO (é ele que estava usando) → materializa no arquivo dele e limpa o
   // Keychain. Senão, ao trocar, o token do perfil antigo vazaria pro novo.
@@ -182,7 +197,21 @@ function claudeJsonPath(id) {
 
 // { ok, loggedIn, email?, plan? } de um perfil específico.
 async function status(id) {
-  return claudeAuth.status(envVars(id));
+  const st = await claudeAuth.status(envVars(id));
+  // Cacheia o e-mail no registro do perfil: os pickers e o banner de limite
+  // mostram QUAL conta é ("tecnologia@…"), não um apelido genérico.
+  try {
+    if (st && st.loggedIn && st.email) {
+      const s = readStore();
+      const target = id === undefined || id === null ? s.active : id;
+      if (target === DEFAULT_ID) { if (s.defaultEmail !== st.email) { s.defaultEmail = st.email; writeStore(s); } }
+      else {
+        const p = s.profiles.find((x) => x.id === target);
+        if (p && p.email !== st.email) { p.email = st.email; writeStore(s); }
+      }
+    }
+  } catch {}
+  return st;
 }
 
 // ─── Login de perfil (paste-code), consumível por IPC e por RPC (polling) ────

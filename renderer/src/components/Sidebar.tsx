@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { AudioLines, Plus, ListChecks, Settings, X, FolderGit2, HardDrive, Globe, Folder, Plug, Music4, Sun, Moon, Cloud, Server, Laptop, RefreshCw, Loader2, Kanban as KanbanIcon, Zap, Share2, ChevronRight, ChevronDown, GitBranch, Pencil, Trash2, MessageSquare } from 'lucide-react';
+import { AudioLines, Bot, Plus, ListChecks, Settings, X, FolderGit2, HardDrive, Globe, Folder, Plug, Music4, Sun, Moon, Cloud, Server, Laptop, RefreshCw, Loader2, Kanban as KanbanIcon, Zap, Share2, ChevronRight, ChevronDown, GitBranch, Pencil, Trash2, MessageSquare } from 'lucide-react';
 import { Project, ProjectSource } from '../types';
 import Logo from './Logo';
 import { useTheme } from '../lib/theme';
@@ -15,6 +15,7 @@ interface Props {
   onNew: () => void;
   onRequirements: () => void;
   onSettings: () => void;
+  onLLM?: () => void;
   onMcp: () => void;
   onPowers?: () => void;
   onRemote: () => void;
@@ -43,7 +44,7 @@ function SourceIcon({ source }: { source: ProjectSource }) {
 }
 
 export default function Sidebar({
-  projects, activeId, onPick, onNew, onRequirements, onSettings, onMcp, onPowers, onRemote, onKanban, onStarter, onDelete, onRefresh, onConvAction,
+  projects, activeId, onPick, onNew, onRequirements, onSettings, onLLM, onMcp, onPowers, onRemote, onKanban, onStarter, onDelete, onRefresh, onConvAction,
   mode, cloudFirst, clientHostName, clientConnected, clientSyncing, clientHostCount, clientProjectCount,
 }: Props) {
   const maestrus = projects.find((p) => p.id === 'maestrus');
@@ -360,6 +361,9 @@ export default function Sidebar({
           aria-expanded={toolsOpen}
         >
           <ChevronDown size={13} className="nav-tools-caret" /> {t('nav.tools') || 'Ferramentas'}
+        </button>
+        <button className="nav-tool" onClick={onLLM}>
+          <Bot size={13} /> {t('nav.llmAccounts')}
         </button>
         <button className="nav-tool" onClick={onSettings}>
           <Settings size={13} /> {t('nav.systemSettings') || 'Ajustes do Sistema'}

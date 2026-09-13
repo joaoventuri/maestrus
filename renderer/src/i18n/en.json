@@ -46,7 +46,8 @@
     "lightMode": "Light mode",
     "darkMode": "Dark mode",
     "themeTooltip": "Current theme: {theme}. Click to switch.",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "llmAccounts": "LLM Accounts"
   },
   "empty": {
     "subtitle": "orchestrator for Claude Code",
@@ -288,7 +289,10 @@
     "descFable51": "Claude Fable 5.1 — current top of the line. Best at code and long-running tasks; cache reads 75% cheaper than Fable 5.",
     "descFable51_1m": "Claude Fable 5.1 with a 1M-token window — huge context on the most capable model.",
     "descFableAlias": "Always the latest Fable — updates itself when a new version ships",
-    "descDiscovered": "Detected in your Claude CLI (newer than the app's list)"
+    "descDiscovered": "Detected in your Claude CLI (newer than the app's list)",
+    "descGpt56Terra": "Top Codex model via ChatGPT (Sep/2026) — replaced GPT-5.4.",
+    "descGpt56Luna": "Fast and economical via ChatGPT — replaced GPT-5.4 mini.",
+    "descGpt52Codex": "The current model for API-key workflows."
   },
   "linkPreview": {
     "agentBusy": "Maestrus is browsing…",
@@ -981,7 +985,9 @@
     "thisMachine": "This machine",
     "host": "Host",
     "active": "in use",
-    "hostOffline": "Host offline"
+    "hostOffline": "Host offline",
+    "teamBound": "Team account — reserved for shared accesses",
+    "teamShort": "team"
   },
   "runs": {
     "title": "Background",
@@ -1056,6 +1062,21 @@
     "aiHostShort": "host's AI",
     "aiCfg": "Configure this access's Claude account",
     "aiCfgTitle": "Claude account for this access",
-    "aiCfgConnect": "Connect the team's Claude account"
+    "aiCfgConnect": "Connect the team's Claude account",
+    "aiReuse": "Reuse an account already configured on this machine:"
+  },
+  "llm": {
+    "title": "LLM Accounts",
+    "sub": "The accounts that pay for turns — official usage, one-click switching and team accounts.",
+    "claudeTitle": "Claude",
+    "claudeSub": "Real usage per account: 5h session, weekly and weekly per model — same source as /usage.",
+    "active": "in use",
+    "use": "Use this account",
+    "resets": "resets in",
+    "refresh": "Refresh usage",
+    "usageErr": "Couldn't fetch usage:",
+    "usageEmpty": "No usage data (logged out?).",
+    "manageTitle": "Manage accounts",
+    "manageSub": "Create, log in and remove Claude accounts on this machine."
   }
 }

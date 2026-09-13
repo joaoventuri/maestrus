@@ -119,6 +119,25 @@ function teamAiBind(from, profileId) {
 // daquele acesso vai gastar (ex.: 5 pessoas na conta tecnologia@ → 1 grant →
 // 1 perfil "Equipe"). Mesmo mapa do fluxo self (g:<grantId>), então tanto faz
 // quem plugou — dono por aqui ou o convidado pelos ajustes do chat.
+// Revogação de verdade: marcar o grant como revogado não bastava — o device
+// já conectado tinha um binding (sid) vivo e continuava lendo e escrevendo até
+// o host reiniciar. Derrubar o binding fecha a porta na hora: o próximo RPC
+// exige hello, e o hello do grant revogado é recusado.
+function dropGrantBindings(grantId) {
+  let n = 0;
+  for (const [did, b] of teamBindings) {
+    if (b && b.grantId === String(grantId)) {
+      teamBindings.delete(did);
+      subscribers.delete(did);
+      linkOf.delete(did);
+      peers.delete(did);
+      n++;
+    }
+  }
+  if (n) { try { onState && onState(getState()); } catch {} }
+  return n;
+}
+
 async function teamAiAdmin(op, grantId, code) {
   const key = 'g:' + String(grantId || '');
   if (!grantId) return { ok: false, error: 'grant_required' };
@@ -154,6 +173,23 @@ async function teamAiAdmin(op, grantId, code) {
       const st = claudeProfiles.loginState();
       if (prof && st && st.profileId === prof) claudeProfiles.loginCancel();
       return { ok: true };
+    }
+    case 'bindExisting': {
+      // Reaproveita uma conta JÁ logada nesta máquina como a conta do time.
+      // Se ela era a ativa do dono, sai da ativa na hora ("bloqueia no meu").
+      const pid = String(code || '');           // 3º arg carrega o profileId
+      const all = claudeProfiles.list();
+      if (!all.profiles.some((x) => x.id === pid)) return { ok: false, error: 'profile_not_found' };
+      m[key] = pid;
+      try { projectStore.setSetting('team_ai_profiles', m); } catch {}
+      try { if (claudeProfiles.getActive() === pid) claudeProfiles.setActive('default', { force: true }); } catch {}
+      const st = await claudeProfiles.status(pid).catch(() => null);
+      return { ok: true, bound: true, loggedIn: !!(st && st.loggedIn), email: (st && st.email) || null };
+    }
+    case 'listProfiles': {
+      // Contas desta máquina, pra UI oferecer o reaproveitamento.
+      const all = claudeProfiles.list();
+      return { ok: true, active: all.active, profiles: all.profiles };
     }
     case 'unbind': {
       delete m[key];
@@ -233,6 +269,7 @@ const OWNER_ONLY_CHANNELS = new Set([
   'team.createScoped', 'team.grants', 'team.revokeGrant',
   'team.ai.adminStatus', 'team.ai.adminLoginStart', 'team.ai.adminLoginState',
   'team.ai.adminLoginCode', 'team.ai.adminLoginCancel', 'team.ai.adminUnbind',
+  'team.ai.adminBindExisting', 'team.ai.adminListProfiles',
   // Contas do Claude do host: trocar/criar/remover afeta TODAS as conversas
   // da máquina e mexe no OAuth do dono. Nunca para um convidado de share.
   'claudeProfiles.list', 'claudeProfiles.status', 'claudeProfiles.setActive',
@@ -543,6 +580,8 @@ async function handleRpc(f, reply, fail) {
       case 'team.ai.adminLoginCode': return reply(await teamAiAdmin('loginCode', payload.grantId, payload.code));
       case 'team.ai.adminLoginCancel': return reply(await teamAiAdmin('loginCancel', payload.grantId));
       case 'team.ai.adminUnbind': return reply(await teamAiAdmin('unbind', payload.grantId));
+      case 'team.ai.adminBindExisting': return reply(await teamAiAdmin('bindExisting', payload.grantId, payload.code));
+      case 'team.ai.adminListProfiles': return reply(await teamAiAdmin('listProfiles', payload.grantId || 'x'));
 
       // ─── Compartilhamento com ESCOPO, criado REMOTAMENTE pelo dono ──────
       // O caso real: as conversas vivem NESTA máquina (host), mas o dono está
@@ -592,6 +631,7 @@ async function handleRpc(f, reply, fail) {
           for (const g of all) if (g && g.id === String(payload.id)) g.revoked = true;
           projectStore.setSetting('invite_grants', all);
         } catch {}
+        dropGrantBindings(payload.id);   // corta quem JÁ está dentro, agora
         return reply({ ok: true });
       }
 
@@ -1116,4 +1156,4 @@ function setOnState(fn) { onState = fn; }
 function subscriberCount() { return subscribers.size; }
 
 module.exports = {
-  setTeamSecret, teamAiAdmin, startTeamRoom, stopTeamRoom, teamRoomActive, setEnsureTeamRoom, start, stop, refreshProjects, updateToken, getState, isHealthy, setOnState, broadcastProjectPatch, subscriberCount };
+  setTeamSecret, teamAiAdmin, dropGrantBindings, startTeamRoom, stopTeamRoom, teamRoomActive, setEnsureTeamRoom, start, stop, refreshProjects, updateToken, getState, isHealthy, setOnState, broadcastProjectPatch, subscriberCount };

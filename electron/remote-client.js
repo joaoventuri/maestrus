@@ -299,7 +299,7 @@ async function hrpc(hostId, channel, payload = {}, timeout = 30000) {
   }
 }
 async function hrpcTeamAiAdmin(hostId, op, grantId, code) {
-  const map = { status: 'team.ai.adminStatus', loginStart: 'team.ai.adminLoginStart', loginState: 'team.ai.adminLoginState', loginCode: 'team.ai.adminLoginCode', loginCancel: 'team.ai.adminLoginCancel', unbind: 'team.ai.adminUnbind' };
+  const map = { status: 'team.ai.adminStatus', loginStart: 'team.ai.adminLoginStart', loginState: 'team.ai.adminLoginState', loginCode: 'team.ai.adminLoginCode', loginCancel: 'team.ai.adminLoginCancel', unbind: 'team.ai.adminUnbind', bindExisting: 'team.ai.adminBindExisting', listProfiles: 'team.ai.adminListProfiles' };
   const ch = map[op]; if (!ch) return { ok: false, error: 'bad_op' };
   return hrpc(hostId, ch, { grantId, code }, 20000);
 }

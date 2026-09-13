@@ -6,6 +6,7 @@ import NewProjectModal from './components/NewProjectModal';
 import RequirementsScreen from './components/RequirementsScreen';
 import SettingsScreen from './components/SettingsScreen';
 import ClaudePowersScreen from './components/ClaudePowersScreen';
+import LLMAccountsScreen from './components/LLMAccountsScreen';
 import SelfhostConnect from './components/SelfhostConnect';
 import RemoteAccess from './components/RemoteAccess';
 import Kanban from './components/Kanban';
@@ -26,7 +27,7 @@ import { noteEvent, setActiveProject, staleWorking, reconcile } from './lib/acti
 let _wakeMod: typeof import('./lib/wake-word') | null = null;
 async function getWakeMod() { if (!_wakeMod) _wakeMod = await import('./lib/wake-word'); return _wakeMod; }
 
-type View = 'chat' | 'requirements' | 'settings' | 'remote' | 'kanban' | 'starter' | 'mode' | 'empty' | 'powers' | 'selfhost';
+type View = 'chat' | 'requirements' | 'settings' | 'remote' | 'kanban' | 'starter' | 'mode' | 'empty' | 'powers' | 'selfhost' | 'llm';
 
 export default function App() {
   const { t, lang } = useT();
@@ -465,6 +466,7 @@ export default function App() {
         onNew={() => setShowNew(true)}
         onRequirements={() => setView('requirements')}
         onSettings={() => setView('settings')}
+        onLLM={() => setView('llm')}
         onMcp={() => setView('powers')}
         onPowers={() => setView('powers')}
         onRemote={() => setView('remote')}
@@ -505,6 +507,7 @@ export default function App() {
         />}
 
         {view === 'powers' && <ClaudePowersScreen />}
+        {view === 'llm' && <LLMAccountsScreen />}
         {view === 'selfhost' && <SelfhostConnect info={selfhost} onConnected={async () => { await reloadProjects(); const fresh = await window.maestrus.projects.list().catch(() => []); setProjects(fresh); enterApp(fresh); }} />}
         {view === 'remote' && <RemoteAccess onConnected={reloadProjects} />}
         {view === 'kanban' && <Kanban projects={projects} />}

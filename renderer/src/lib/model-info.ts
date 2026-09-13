@@ -58,6 +58,11 @@ export const MODEL_REGISTRY: ModelInfo[] = [
   { id: 'haiku',                  label: 'Haiku (último)',    family: 'haiku',  provider: 'anthropic', descKey: 'model.descHaiku',        contextWindow: 200_000 },
   { id: 'default',                label: 'Padrão (automático)', family: 'default', provider: 'anthropic', descKey: 'model.descDefault',   contextWindow: 200_000 },
   // ─── OpenAI / Codex (engines 'codex' e 'codex-api') ───────────────────────
+  // Set/2026: gpt-5.4 aposentado; o Codex via ChatGPT usa gpt-5.6-terra/luna.
+  // Fluxo por API key segue no gpt-5.2-codex.
+  { id: 'gpt-5.6-terra',          label: 'GPT-5.6 Terra',     family: 'codex',  provider: 'openai',    descKey: 'model.descGpt56Terra',   contextWindow: 400_000 },
+  { id: 'gpt-5.6-luna',           label: 'GPT-5.6 Luna',      family: 'gpt',    provider: 'openai',    descKey: 'model.descGpt56Luna',    contextWindow: 400_000 },
+  { id: 'gpt-5.2-codex',          label: 'GPT-5.2 Codex (API)', family: 'codex', provider: 'openai',   descKey: 'model.descGpt52Codex',   contextWindow: 400_000 },
   { id: 'gpt-5-codex',            label: 'GPT-5 Codex',       family: 'codex',  provider: 'openai',    descKey: 'model.descGpt5Codex',    contextWindow: 400_000 },
   { id: 'gpt-5',                  label: 'GPT-5',             family: 'gpt',    provider: 'openai',    descKey: 'model.descGpt5',         contextWindow: 400_000 },
   { id: 'gpt-5-mini',             label: 'GPT-5 mini',        family: 'gpt',    provider: 'openai',    descKey: 'model.descGpt5Mini',     contextWindow: 400_000 },
@@ -135,7 +140,9 @@ export function modelsForEngine(engine: string | undefined): ModelInfo[] {
 // Anthropic default = alias 'opus' (não um id pinado): acompanha sozinho o
 // último Opus quando a Anthropic lança versão nova.
 export function defaultModelForEngine(engine: string | undefined): ModelChoice {
-  return engineProvider(engine) === 'openai' ? 'gpt-5-codex' : 'opus';
+  if (engineProvider(engine) !== 'openai') return 'opus';
+  // Codex por API key não enxerga os modelos do plano ChatGPT.
+  return engine === 'codex-api' ? 'gpt-5.2-codex' : 'gpt-5.6-terra';
 }
 
 // Reserva de OUTPUT que o Claude Code desconta da janela visível. É o teto de

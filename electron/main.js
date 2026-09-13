@@ -1953,12 +1953,18 @@ ipcMain.handle('invite:grants', async () => {
     .map((g) => ({ ...g, aiBound: !!_aiMap['g:' + g.id] }));
   // Sendo client: soma os grants dos hosts conectados (com o dono do grant
   // marcado, pra revogação ir pro lugar certo).
+  // Hosts em PARALELO e com teto curto: um host fantasma na lista segurava a
+  // tela por 8s+ POR HOST (era o "revoguei e demora pra sumir").
   try {
-    for (const h of (remoteClient.getHosts ? remoteClient.getHosts() : [])) {
-      try {
-        const r = await remoteClient.teamGrants(h.deviceId);
-        if (r && r.ok) for (const g of r.grants || []) grants.push({ ...g, hostId: h.deviceId, hostName: h.name });
-      } catch {}
+    const hosts = remoteClient.getHosts ? remoteClient.getHosts() : [];
+    const results = await Promise.all(hosts.map((h) =>
+      Promise.race([
+        remoteClient.teamGrants(h.deviceId).then((r) => ({ h, r })).catch(() => null),
+        new Promise((res) => setTimeout(() => res(null), 3000)),
+      ])
+    ));
+    for (const it of results) {
+      if (it && it.r && it.r.ok) for (const g of it.r.grants || []) grants.push({ ...g, hostId: it.h.deviceId, hostName: it.h.name });
     }
   } catch {}
   return { ok: true, grants };
@@ -1982,6 +1988,7 @@ ipcMain.handle('invite:revokeGrant', async (_e, id, hostId) => {
     for (const g of all) if (g && g.id === id) g.revoked = true;
     projectStore.setSetting('invite_grants', all);
   } catch {}
+  try { remoteHost.dropGrantBindings(id); } catch {}   // acesso morre AGORA
   return { ok: true };
 });
 
@@ -2943,13 +2950,13 @@ ipcMain.handle('claude:loadHistory', async (_e, projectId) => {
   return ptyFor(project).loadHistory(project);
 });
 
-ipcMain.handle('claude:usage', async (_e, { scope, projectId } = {}) => {
+ipcMain.handle('claude:usage', async (_e, { scope, projectId, profileId } = {}) => {
   // Projeto remoto → pergunta pro HOST (é a conta Claude DE LÁ que importa).
   const remoteResult = await routeToRemote(projectId, 'usage', { scope }, 15000);
   if (remoteResult !== null) return remoteResult;
-  // Uso REAL da conta Claude (mesma fonte do /usage oficial do Claude Code) —
-  // substituiu a estimativa local por JSONL (usage.aggregate).
-  return usage.real();
+  // Uso REAL da conta Claude (mesma fonte do /usage oficial do Claude Code).
+  // `profileId` = uso de UMA conta específica (tela Contas LLM).
+  return usage.real(profileId);
 });
 
 ipcMain.handle('claude:version', async () => {

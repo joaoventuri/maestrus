@@ -13,7 +13,7 @@ import { useT } from '../lib/i18n';
  * Atualiza em tempo real: o main emite `profiles` quando alguém troca em
  * qualquer lugar, então as várias telas que mostram a conta nunca divergem.
  */
-export interface Account { id: string; name?: string; active?: boolean; email?: string }
+export interface Account { id: string; name?: string; active?: boolean; email?: string; teamBound?: boolean }
 
 export default function AccountPicker({ projectId, compact = false, onSwitched }: {
   projectId: string;
@@ -72,13 +72,13 @@ export default function AccountPicker({ projectId, compact = false, onSwitched }
         {accounts.map((a) => (
           <button
             key={a.id}
-            className={`acct-chip ${a.active ? 'on' : ''}`}
-            disabled={!!busy || a.active}
+            className={`acct-chip ${a.active ? 'on' : ''} ${a.teamBound ? 'team' : ''}`}
+            disabled={!!busy || a.active || a.teamBound}
             onClick={() => pick(a.id)}
-            title={a.email || a.name || a.id}
+            title={a.teamBound ? (t('accounts.teamBound') || 'Conta do time — reservada aos acessos compartilhados') : (a.email || a.name || a.id)}
           >
             {busy === a.id ? <Loader2 size={11} className="spin" /> : (a.active ? <Check size={11} /> : null)}
-            {a.name || a.id}
+            {a.email || a.name || a.id}
           </button>
         ))}
       </span>
@@ -90,13 +90,14 @@ export default function AccountPicker({ projectId, compact = false, onSwitched }
       {accounts.map((a) => (
         <button
           key={a.id}
-          className={`acct-row ${a.active ? 'on' : ''}`}
-          disabled={!!busy}
+          className={`acct-row ${a.active ? 'on' : ''} ${a.teamBound ? 'team' : ''}`}
+          disabled={!!busy || a.teamBound}
           onClick={() => pick(a.id)}
         >
           <UserRound size={14} />
-          <span className="acct-name">{a.name || a.id}</span>
-          {a.email && <span className="acct-email">{a.email}</span>}
+          <span className="acct-name">{a.email || a.name || a.id}</span>
+          {a.email && a.name && <span className="acct-email">{a.name}</span>}
+          {a.teamBound && <span className="acct-team">{t('accounts.teamShort') || 'time'}</span>}
           <span className="acct-state">
             {busy === a.id ? <Loader2 size={13} className="spin" />
               : a.active ? <><Check size={13} /> {t('accounts.active') || 'em uso'}</> : null}

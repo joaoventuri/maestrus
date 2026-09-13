@@ -46,7 +46,8 @@
     "lightMode": "Modo claro",
     "darkMode": "Modo escuro",
     "themeTooltip": "Tema atual: {theme}. Clique pra trocar.",
-    "refresh": "Atualizar"
+    "refresh": "Atualizar",
+    "llmAccounts": "Contas LLM"
   },
   "empty": {
     "subtitle": "orquestrador pra Claude Code",
@@ -288,7 +289,10 @@
     "descFable51": "Claude Fable 5.1 — topo da linha atual. Melhor em código e tarefas longas; cache 75% mais barato que o Fable 5.",
     "descFable51_1m": "Claude Fable 5.1 com janela de 1M tokens — contexto gigante no modelo mais capaz.",
     "descFableAlias": "Sempre o Fable mais recente — atualiza sozinho quando sai versão nova",
-    "descDiscovered": "Detectado no seu Claude CLI (mais novo que a lista do app)"
+    "descDiscovered": "Detectado no seu Claude CLI (mais novo que a lista do app)",
+    "descGpt56Terra": "O topo do Codex via ChatGPT (set/2026) — substituiu o GPT-5.4.",
+    "descGpt56Luna": "Rápido e econômico via ChatGPT — substituiu o GPT-5.4 mini.",
+    "descGpt52Codex": "O modelo atual do fluxo por API key."
   },
   "linkPreview": {
     "agentBusy": "Maestrus navegando…",
@@ -981,7 +985,9 @@
     "thisMachine": "Esta máquina",
     "host": "Host",
     "active": "em uso",
-    "hostOffline": "Host fora do ar"
+    "hostOffline": "Host fora do ar",
+    "teamBound": "Conta do time — reservada aos acessos compartilhados",
+    "teamShort": "time"
   },
   "runs": {
     "title": "Segundo plano",
@@ -1056,6 +1062,21 @@
     "aiHostShort": "IA do host",
     "aiCfg": "Configurar conta do Claude deste acesso",
     "aiCfgTitle": "Conta do Claude do acesso",
-    "aiCfgConnect": "Conectar a conta do Claude do time"
+    "aiCfgConnect": "Conectar a conta do Claude do time",
+    "aiReuse": "Reaproveitar uma conta já configurada nesta máquina:"
+  },
+  "llm": {
+    "title": "Contas LLM",
+    "sub": "As contas que pagam os turnos — uso oficial, troca a um clique e as contas do time.",
+    "claudeTitle": "Claude",
+    "claudeSub": "Uso real por conta: sessão de 5h, semana e semana por modelo — a mesma fonte do /usage.",
+    "active": "em uso",
+    "use": "Usar esta conta",
+    "resets": "reseta em",
+    "refresh": "Atualizar uso",
+    "usageErr": "Não consegui buscar o uso:",
+    "usageEmpty": "Sem dados de uso (conta deslogada?).",
+    "manageTitle": "Gerenciar contas",
+    "manageSub": "Criar, logar e remover contas do Claude desta máquina."
   }
 }

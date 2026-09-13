@@ -93,7 +93,14 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
   const [aiCfg, setAiCfg] = useState<any>(null);        // { grant, st?, flow?, code }
   async function openAiCfg(g: any) {
     const st = await inviteApi?.aiAdmin?.('status', g.id, g.hostId).catch(() => null);
-    setAiCfg({ grant: g, st, code: '' });
+    // Contas já logadas na máquina do host: reaproveitar em vez de logar de novo.
+    const lp = await inviteApi?.aiAdmin?.('listProfiles', g.id, g.hostId).catch(() => null);
+    setAiCfg({ grant: g, st, code: '', profiles: (lp?.profiles || []).filter((p: any) => p.email && !p.teamBound) });
+  }
+  async function aiBindExisting(profileId: string) {
+    if (!aiCfg) return;
+    const st = await inviteApi?.aiAdmin?.('bindExisting', aiCfg.grant.id, aiCfg.grant.hostId, profileId).catch(() => null);
+    if (st?.ok) { setAiCfg({ ...aiCfg, st }); loadShare(); }
   }
   async function aiLoginStart() {
     if (!aiCfg) return;
@@ -127,6 +134,7 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
   }
 
   async function revokeGrant(g: any) {
+    setGrants((gs) => gs.filter((x) => x.id !== g.id));   // some na hora; o resto é pano de fundo
     await inviteApi?.revokeGrant?.(g.id, g.hostId).catch(() => {});
     loadShare();
   }
@@ -435,10 +443,10 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
               <div className="share-pick">
                 <div className="share-pick-h">{t('team.sharePick')}</div>
                 {allProjects.map((p) => (
-                  <label key={p.id} className="share-item">
-                    <input type="checkbox" checked={sel.has(p.id)} onChange={() => toggleSel(p.id)} />
-                    <span>{p.name}</span>
-                  </label>
+                  <div key={p.id} className={`share-item ${sel.has(p.id) ? 'on' : ''}`} onClick={() => toggleSel(p.id)}>
+                    <span className="share-item-name">{p.name}</span>
+                    <MiniSwitch on={sel.has(p.id)} />
+                  </div>
                 ))}
                 {allProjects.length === 0 && <div className="cloud-hint">—</div>}
               </div>
@@ -501,6 +509,16 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                   ) : (
                     <>
                       <div className="cloud-hint">{t('team.aiHost')}</div>
+                      {aiCfg.profiles?.length > 0 && (
+                        <div className="share-ai-reuse">
+                          <div className="share-pick-h">{t('team.aiReuse')}</div>
+                          {aiCfg.profiles.map((p: any) => (
+                            <button key={p.id} className="cloud-logout" style={{ width: 'auto', marginTop: 0 }} onClick={() => aiBindExisting(p.id)}>
+                              <UserRound size={13} /> {p.email}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <button className="cloud-submit" style={{ maxWidth: 320 }} onClick={aiLoginStart}>
                         <UserRound size={14} /> {t('team.aiCfgConnect')}
                       </button>
@@ -686,6 +704,11 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
       </div>
     </div>
   );
+}
+
+// Switch pequeno (linhas de lista) — checkbox cru destoava do resto do app.
+function MiniSwitch({ on }: { on: boolean }) {
+  return <span className={`m-switch mini ${on ? 'on' : ''}`} role="switch" aria-checked={on}><span className="m-switch-knob" /></span>;
 }
 
 // Switch enable/disable elegante (reutilizado pelo host e pela descoberta).

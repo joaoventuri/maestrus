@@ -12,11 +12,11 @@ try { claudeProfiles = require('./claude-profiles'); } catch {}
 // Retorna as cotas oficiais: sessão (5h), semanal geral e semanal por modelo,
 // com percentual, severidade e horário de reset — sem estimativa local.
 
-function readOauthCreds() {
-  // 1) arquivo .credentials.json do PERFIL ATIVO (multi-conta) ou do ~/.claude
+function readOauthCreds(profileId) {
+  // 1) arquivo .credentials.json do perfil pedido (ou do ATIVO) / ~/.claude
   const dirs = [];
   try {
-    const d = claudeProfiles && claudeProfiles.configDir(claudeProfiles.getActive());
+    const d = claudeProfiles && claudeProfiles.configDir(profileId !== undefined && profileId !== null ? profileId : claudeProfiles.getActive());
     if (d) dirs.push(d);
   } catch {}
   dirs.push(path.join(os.homedir(), '.claude'));
@@ -43,9 +43,9 @@ const LIMIT_LABELS = {
   weekly_scoped: 'Semana',
 };
 
-function real() {
+function real(profileId) {
   return new Promise((resolve) => {
-    const creds = readOauthCreds();
+    const creds = readOauthCreds(profileId);
     if (!creds) return resolve({ ok: false, real: true, error: 'no_credentials' });
     const req = https.get('https://api.anthropic.com/api/oauth/usage', {
       headers: {
