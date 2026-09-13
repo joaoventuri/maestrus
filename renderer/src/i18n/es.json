@@ -1077,6 +1077,11 @@
     "usageErr": "No pude obtener el uso:",
     "usageEmpty": "Sin datos de uso (¿sesión cerrada?).",
     "manageTitle": "Gestionar cuentas",
-    "manageSub": "Crear, iniciar sesión y quitar cuentas de Claude en esta máquina."
+    "manageSub": "Crear, iniciar sesión y quitar cuentas de Claude en esta máquina.",
+    "usageNeedsSwitch": "El uso estará disponible tras usar esta cuenta una vez — el token se materializa al cambiar.",
+    "usageExpired": "La sesión de esta cuenta expiró — reconéctate.",
+    "showUsage": "Ver uso",
+    "hideUsage": "Ocultar uso",
+    "movedHint": "La gestión de cuentas de Claude ahora vive en “Cuentas LLM” en la barra lateral — junto al uso oficial por cuenta."
   }
 }

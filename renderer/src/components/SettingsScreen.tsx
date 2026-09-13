@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Settings as SettingsIcon, Languages, Cloud, RefreshCw, Loader2, DownloadCloud, Check, FolderInput, Timer, MonitorCog, Globe, Server, Laptop, MonitorSmartphone, KeyRound, Trash2, Mic, AlertCircle, ExternalLink, Power, MessageSquare } from 'lucide-react';
 import { useT, LANGS } from '../lib/i18n';
 import { ClaudeSession } from '../types';
-import ClaudeAccounts from './ClaudeAccounts';
 import CodexCliConnect from './CodexCliConnect';
 import { OpenAIMark, ClaudeMark } from './BrandMarks';
 
@@ -289,7 +288,9 @@ export default function SettingsScreen({ onGoRemote, onModeChange }: { onGoRemot
       </div>
 
       {authTab === 'claude' && (<>
-      <ClaudeAccounts />
+      {/* A gestão de contas mudou pra tela CONTAS LLM (sidebar) — junto do uso
+          oficial por conta. Duas casas pra mesma lista = duas verdades. */}
+      <p className="page-sub">{t('llm.movedHint')}</p>
 
       {!isSelfhost && (
       <section className="settings-section">

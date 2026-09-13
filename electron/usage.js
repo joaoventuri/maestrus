@@ -13,10 +13,15 @@ try { claudeProfiles = require('./claude-profiles'); } catch {}
 // com percentual, severidade e horário de reset — sem estimativa local.
 
 function readOauthCreds(profileId) {
-  // 1) arquivo .credentials.json do perfil pedido (ou do ATIVO) / ~/.claude
+  // Perfil explícito → quem resolve é a máquina de perfis (ela sabe onde o
+  // token REALMENTE está: Keychain pra ativa, arquivo pras estacionadas).
+  if (profileId !== undefined && profileId !== null && claudeProfiles && claudeProfiles.oauthCredsFor) {
+    return claudeProfiles.oauthCredsFor(profileId);
+  }
+  // 1) arquivo .credentials.json do perfil ATIVO / ~/.claude
   const dirs = [];
   try {
-    const d = claudeProfiles && claudeProfiles.configDir(profileId !== undefined && profileId !== null ? profileId : claudeProfiles.getActive());
+    const d = claudeProfiles && claudeProfiles.configDir(claudeProfiles.getActive());
     if (d) dirs.push(d);
   } catch {}
   dirs.push(path.join(os.homedir(), '.claude'));

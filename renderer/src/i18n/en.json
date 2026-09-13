@@ -1077,6 +1077,11 @@
     "usageErr": "Couldn't fetch usage:",
     "usageEmpty": "No usage data (logged out?).",
     "manageTitle": "Manage accounts",
-    "manageSub": "Create, log in and remove Claude accounts on this machine."
+    "manageSub": "Create, log in and remove Claude accounts on this machine.",
+    "usageNeedsSwitch": "Usage becomes available after using this account once — the token materializes on switch.",
+    "usageExpired": "This account's session expired — reconnect.",
+    "showUsage": "Show usage",
+    "hideUsage": "Hide usage",
+    "movedHint": "Claude account management now lives in “LLM Accounts” in the sidebar — together with official per-account usage."
   }
 }

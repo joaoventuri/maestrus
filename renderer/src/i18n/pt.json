@@ -1077,6 +1077,11 @@
     "usageErr": "Não consegui buscar o uso:",
     "usageEmpty": "Sem dados de uso (conta deslogada?).",
     "manageTitle": "Gerenciar contas",
-    "manageSub": "Criar, logar e remover contas do Claude desta máquina."
+    "manageSub": "Criar, logar e remover contas do Claude desta máquina.",
+    "usageNeedsSwitch": "Uso disponível depois de usar esta conta uma vez — o token materializa na troca.",
+    "usageExpired": "Sessão desta conta expirou — reconecte.",
+    "showUsage": "Ver uso",
+    "hideUsage": "Ocultar uso",
+    "movedHint": "A gestão de contas do Claude agora vive em “Contas LLM”, na barra lateral — junto do uso oficial por conta."
   }
 }

@@ -195,6 +195,35 @@ function claudeJsonPath(id) {
   return dir ? path.join(ensureProfileDir(target) || dir, '.claude.json') : path.join(os.homedir(), '.claude.json');
 }
 
+// Credenciais OAuth de um perfil, com as regras REAIS do macOS: a conta ATIVA
+// vive no Keychain (o CLI escreve lá independente do CLAUDE_CONFIG_DIR); os
+// perfis estacionados vivem no arquivo materializado na troca. Um leitor
+// ingênuo de arquivo dava no_credentials pra conta ativa — e um fallback cego
+// de Keychain devolveria o uso da conta ERRADA pros estacionados.
+function oauthCredsFor(id) {
+  const target = id === undefined || id === null ? getActive() : id;
+  const readFile = (dir) => {
+    try {
+      const j = JSON.parse(fs.readFileSync(path.join(dir, '.credentials.json'), 'utf8'));
+      return j && j.claudeAiOauth && j.claudeAiOauth.accessToken ? j.claudeAiOauth : null;
+    } catch { return null; }
+  };
+  const readKeychain = () => {
+    if (process.platform !== 'darwin') return null;
+    try {
+      const blob = require('child_process').execFileSync('security', ['find-generic-password', '-s', 'Claude Code-credentials', '-w'], { encoding: 'utf8', timeout: 8000 }).trim();
+      const j = JSON.parse(blob);
+      return j && j.claudeAiOauth && j.claudeAiOauth.accessToken ? j.claudeAiOauth : null;
+    } catch { return null; }
+  };
+  const isActive = target === getActive();
+  const dir = target === DEFAULT_ID ? path.join(os.homedir(), '.claude') : configDir(target);
+  // Ativa: Keychain primeiro (é onde o CLI está escrevendo AGORA), arquivo como
+  // fallback. Estacionada: SÓ o arquivo dela — Keychain pertence à ativa.
+  if (isActive) return readKeychain() || (dir ? readFile(dir) : null) || readFile(path.join(os.homedir(), '.claude'));
+  return dir ? readFile(dir) : null;
+}
+
 // { ok, loggedIn, email?, plan? } de um perfil específico.
 async function status(id) {
   const st = await claudeAuth.status(envVars(id));
@@ -258,6 +287,7 @@ function loginCode(code) { return claudeAuth.submitCode(code); }
 function loginCancel() { claudeAuth.cancelLogin(); _login.active = false; return { ok: true }; }
 
 module.exports = {
+  oauthCredsFor,
   DEFAULT_ID, list, getActive, setActive, create, remove,
   envVars, configDir, claudeJsonPath, ensureProfileDir, status,
   loginStart, loginState, loginCode, loginCancel,

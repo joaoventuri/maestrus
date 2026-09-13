@@ -15,7 +15,7 @@ type ProfStatus = { loading: boolean; loggedIn?: boolean; email?: string | null;
  * a máquina que roda aquele projeto (host ou container). Sem isso a tela
  * mostrava sempre as locais, mesmo conectada a um host com outras contas.
  */
-export default function ClaudeAccounts({ scope = 'local' }: { scope?: string }) {
+export default function ClaudeAccounts({ scope = 'local', withUsage = false }: { scope?: string; withUsage?: boolean }) {
   const { t } = useT();
   const base = (window as any).maestrus?.claudeProfiles;
   // Mesma superfície de API, origem diferente: as telas não precisam saber.
@@ -27,6 +27,7 @@ export default function ClaudeAccounts({ scope = 'local' }: { scope?: string }) 
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [active, setActive] = useState<string>('default');
   const [statuses, setStatuses] = useState<Record<string, ProfStatus>>({});
+  const [usageOpen, setUsageOpen] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [switching, setSwitching] = useState<string | null>(null);
 
@@ -169,6 +170,11 @@ export default function ClaudeAccounts({ scope = 'local' }: { scope?: string }) 
                   </div>
                 </div>
                 <div className="claude-acc-actions">
+                  {withUsage && st?.loggedIn && (
+                    <button className="btn-secondary" onClick={() => setUsageOpen(usageOpen === p.id ? null : p.id)}>
+                      {usageOpen === p.id ? (t('llm.hideUsage') || 'Ocultar uso') : (t('llm.showUsage') || 'Ver uso')}
+                    </button>
+                  )}
                   {st && !st.loading && !st.loggedIn && (
                     <button className="btn-secondary" onClick={() => connect(p.id)}>{t('claudeAcc.connect') || 'Conectar'}</button>
                   )}
@@ -176,6 +182,7 @@ export default function ClaudeAccounts({ scope = 'local' }: { scope?: string }) 
                     <button className="btn-icon danger" onClick={() => removeProfile(p.id)} title={t('claudeAcc.remove') || 'Remover'}><Trash2 size={13} /></button>
                   )}
                 </div>
+                {withUsage && usageOpen === p.id && <UsageBars profileId={p.id} />}
               </div>
             );
           })}
@@ -230,5 +237,62 @@ export default function ClaudeAccounts({ scope = 'local' }: { scope?: string }) 
 
       <div className="byok-footnote">{t('claudeAcc.footnote') || 'A troca vale a partir da próxima mensagem, em todos os projetos deste host. O histórico é compartilhado entre as contas.'}</div>
     </section>
+  );
+}
+
+
+// ─── Uso oficial por conta (mesma fonte do /usage do Claude Code) ───────────
+// Sessão de 5h, semana e semana por modelo, com severidade e reset. Erros
+// viram frase de gente: "sem credencial" numa conta estacionada não é bug — o
+// token só materializa quando a conta é usada uma vez.
+function UsageBars({ profileId }: { profileId: string }) {
+  const { t } = useT();
+  const [data, setData] = useState<{ limits: any[]; error?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = async () => {
+    setBusy(true);
+    try {
+      const r: any = await (window as any).maestrus?.claude?.usage?.({ profileId });
+      if (r?.ok && Array.isArray(r.limits)) setData({ limits: r.limits });
+      else setData({ limits: [], error: r?.error || 'erro' });
+    } catch (e: any) { setData({ limits: [], error: e?.message || 'erro' }); }
+    finally { setBusy(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [profileId]);
+
+  const friendly = (e: string) =>
+    e === 'no_credentials' ? (t('llm.usageNeedsSwitch') || 'Uso disponível depois de USAR esta conta uma vez — o token materializa na troca.')
+    : e === 'auth_expired' ? (t('llm.usageExpired') || 'Sessão desta conta expirou — reconecte.')
+    : `${t('llm.usageErr') || 'Não consegui buscar o uso:'} ${e}`;
+
+  if (!data) return <div className="llm-usage-loading"><Loader2 size={13} className="spin" /></div>;
+  if (data.error) return <div className="llm-usage-err">{friendly(data.error)} <button onClick={load}><RefreshCw size={11} /></button></div>;
+  if (!data.limits.length) return <div className="llm-usage-err">{t('llm.usageEmpty')}</div>;
+  return (
+    <div className="llm-usage">
+      {data.limits.map((l: any, i: number) => {
+        const pct = Math.max(0, Math.min(100, Math.round(l.percent ?? 0)));
+        const sev = l.severity === 'exceeded' || pct >= 95 ? 'crit' : (l.severity === 'warning' || pct >= 80 ? 'warn' : 'ok');
+        const reset = (() => {
+          if (!l.resetsAt) return '';
+          const d = new Date(l.resetsAt); if (isNaN(d.getTime())) return '';
+          const mins = Math.round((d.getTime() - Date.now()) / 60000); if (mins <= 0) return '';
+          if (mins < 60) return `${t('llm.resets')} ${mins}min`;
+          if (mins < 48 * 60) return `${t('llm.resets')} ${Math.round(mins / 60)}h`;
+          return `${t('llm.resets')} ${d.toLocaleDateString(undefined, { weekday: 'short' })}`;
+        })();
+        return (
+          <div key={i} className="llm-limit">
+            <div className="llm-limit-head">
+              <span className="llm-limit-label">{l.label}</span>
+              <span className={`llm-limit-pct ${sev}`}>{l.percent === null ? '—' : `${pct}%`}</span>
+            </div>
+            <div className="llm-bar"><div className={`llm-bar-fill ${sev}`} style={{ width: `${pct}%` }} /></div>
+            <div className="llm-limit-reset">{reset}</div>
+          </div>
+        );
+      })}
+      <button className="llm-refresh" onClick={load} disabled={busy}>{busy ? <Loader2 size={12} className="spin" /> : <RefreshCw size={12} />}</button>
+    </div>
   );
 }
