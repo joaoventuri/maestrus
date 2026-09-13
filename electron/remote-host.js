@@ -157,6 +157,18 @@ function teamAiProfileFor(from) {
   if (cands.every((pid) => { const c = _usageCache.get(pid); return !c || c.pct === bestPct; })) return cands[(_rr++) % cands.length];
   return best;
 }
+// Recriar o acesso do MESMO e-mail (revogou e gerou de novo) não pode
+// perder a conta do Claude configurada: o pool do acesso anterior desse
+// e-mail passa pro novo. Sem isso o time caía silenciosamente na conta do host.
+function inheritTeamAi(newGrantId, email, grants) {
+  if (!email) return;
+  const prev = (grants || []).filter((g) => g && g.id !== newGrantId && g.email === email && teamAiPool('g:' + g.id).length)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+  if (!prev) return;
+  const pool = teamAiPool('g:' + prev.id);
+  teamAiSetPool('g:' + newGrantId, pool);
+  if (prev.revoked) teamAiSetPool('g:' + prev.id, []);
+}
 function teamAiBind(from, profileId) {
   const key = teamAiKeyFor(from);
   teamAiSetPool(key, profileId ? [profileId] : []);
@@ -686,8 +698,10 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
         } catch (e) { return fail(String(e && e.message || e)); }
         try {
           const all = projectStore.getSetting('invite_grants') || [];
-          all.push({ id: sc.grantId, p: projects, w: payload.write !== false, e: sc.expiresAt, email: String(payload.email || '').slice(0, 190) || undefined, createdAt: Date.now() });
+          const email = String(payload.email || '').slice(0, 190) || undefined;
+          all.push({ id: sc.grantId, p: projects, w: payload.write !== false, e: sc.expiresAt, email, createdAt: Date.now() });
           projectStore.setSetting('invite_grants', all);
+          inheritTeamAi(sc.grantId, email, all);
         } catch {}
         return reply({ ok: true, code: sc.code, grantId: sc.grantId, expiresAt: sc.expiresAt, url: `${require('./config').BASE}/app#c=${sc.code}` });
       }
@@ -1228,4 +1242,5 @@ function setOnState(fn) { onState = fn; }
 function subscriberCount() { return subscribers.size; }
 
 module.exports = {
+  inheritTeamAi,
   setTeamSecret, teamAiAdmin, dropGrantBindings, startTeamRoom, stopTeamRoom, teamRoomActive, setEnsureTeamRoom, start, stop, refreshProjects, updateToken, getState, isHealthy, setOnState, broadcastProjectPatch, subscriberCount };

@@ -1932,8 +1932,10 @@ ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
   // Registro do grant: é o que permite REVOGAR um convite sem girar a sala.
   try {
     const all = projectStore.getSetting('invite_grants') || [];
-    all.push({ id: sc.grantId, p: projects, w: opts.write !== false, e: sc.expiresAt, label: String(opts.label || '').slice(0, 60), email: opts.email ? String(opts.email).slice(0, 190) : undefined, createdAt: Date.now() });
+    const email = opts.email ? String(opts.email).slice(0, 190) : undefined;
+    all.push({ id: sc.grantId, p: projects, w: opts.write !== false, e: sc.expiresAt, label: String(opts.label || '').slice(0, 60), email, createdAt: Date.now() });
     projectStore.setSetting('invite_grants', all);
+    try { remoteHost.inheritTeamAi(sc.grantId, email, all); } catch {}
   } catch {}
   const webBase = `${require('./config').BASE}/app`;
   const out = { ok: true, code: sc.code, grantId: sc.grantId, expiresAt: sc.expiresAt, url: `${webBase}#c=${sc.code}` };
