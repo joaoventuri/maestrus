@@ -507,7 +507,7 @@ export default function App() {
         />}
 
         {view === 'powers' && <ClaudePowersScreen />}
-        {view === 'llm' && <LLMAccountsScreen />}
+        {view === 'llm' && <LLMAccountsScreen onOpenSharing={() => setView('remote')} />}
         {view === 'selfhost' && <SelfhostConnect info={selfhost} onConnected={async () => { await reloadProjects(); const fresh = await window.maestrus.projects.list().catch(() => []); setProjects(fresh); enterApp(fresh); }} />}
         {view === 'remote' && <RemoteAccess onConnected={reloadProjects} />}
         {view === 'kanban' && <Kanban projects={projects} />}

@@ -15,7 +15,7 @@ type ProfStatus = { loading: boolean; loggedIn?: boolean; email?: string | null;
  * a máquina que roda aquele projeto (host ou container). Sem isso a tela
  * mostrava sempre as locais, mesmo conectada a um host com outras contas.
  */
-export default function ClaudeAccounts({ scope = 'local', withUsage = false }: { scope?: string; withUsage?: boolean }) {
+export default function ClaudeAccounts({ scope = 'local', withUsage = false, bare = false }: { scope?: string; withUsage?: boolean; bare?: boolean }) {
   const { t } = useT();
   const base = (window as any).maestrus?.claudeProfiles;
   // Mesma superfície de API, origem diferente: as telas não precisam saber.
@@ -136,8 +136,10 @@ export default function ClaudeAccounts({ scope = 'local', withUsage = false }: {
 
   return (
     <section className="settings-section">
+      {!bare && <>
       <h2><Users size={15} /> {t('claudeAcc.title') || 'Contas do Claude'}</h2>
       <p className="page-sub">{t('claudeAcc.desc') || 'Cadastre mais de uma assinatura do Claude e troque quando o limite de uma acabar — a conversa continua exatamente de onde parou.'}</p>
+      </>}
 
       {err && <div className="byok-error"><AlertCircle size={13} /> {err} <button className="btn-icon" onClick={load} title="retry"><RefreshCw size={12} /></button></div>}
 

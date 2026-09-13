@@ -1082,6 +1082,11 @@
     "usageExpired": "This account's session expired — reconnect.",
     "showUsage": "Show usage",
     "hideUsage": "Hide usage",
-    "movedHint": "Claude account management now lives in “LLM Accounts” in the sidebar — together with official per-account usage."
+    "movedHint": "Claude account management now lives in “LLM Accounts” in the sidebar — together with official per-account usage.",
+    "teamTitle": "Team accounts",
+    "teamSub": "Each shared access and the Claude account it spends.",
+    "teamEmpty": "No shared access yet — create one in Remote Access → Share specific conversations.",
+    "teamUsesYours": "uses YOUR active account",
+    "teamManage": "Manage accesses and team account"
   }
 }

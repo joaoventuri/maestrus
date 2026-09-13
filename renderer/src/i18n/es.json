@@ -1082,6 +1082,11 @@
     "usageExpired": "La sesión de esta cuenta expiró — reconéctate.",
     "showUsage": "Ver uso",
     "hideUsage": "Ocultar uso",
-    "movedHint": "La gestión de cuentas de Claude ahora vive en “Cuentas LLM” en la barra lateral — junto al uso oficial por cuenta."
+    "movedHint": "La gestión de cuentas de Claude ahora vive en “Cuentas LLM” en la barra lateral — junto al uso oficial por cuenta.",
+    "teamTitle": "Cuentas del equipo",
+    "teamSub": "Cada acceso compartido y la cuenta de Claude que gasta.",
+    "teamEmpty": "Aún no hay accesos compartidos — crea uno en Acceso Remoto → Compartir conversaciones específicas.",
+    "teamUsesYours": "usa TU cuenta activa",
+    "teamManage": "Gestionar accesos y cuenta del equipo"
   }
 }
