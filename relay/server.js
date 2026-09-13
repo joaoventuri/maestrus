@@ -158,6 +158,12 @@ function createRelay({ port = 0, secret, logger = console, maxFrameBytes = 16 <<
           return;
         }
         case FRAME.PING: { send(ws, FRAME.PONG, {}); return; }
+        case FRAME.ERROR:
+          // Erro emitido pelo HOST em resposta a um RPC (fail()): vai pro
+          // solicitante como qualquer resposta. Antes caía em unknown-type e
+          // o client esperava 30s de timeout pra descobrir um "acesso-negado".
+          if (!f.to || !f.reqId) { send(ws, FRAME.ERROR, { error: 'unknown-type', type: f.type }); return; }
+          // fallthrough
         case FRAME.RPC_REQUEST:
         case FRAME.RPC_RESPONSE:
         case FRAME.EVENT: {
