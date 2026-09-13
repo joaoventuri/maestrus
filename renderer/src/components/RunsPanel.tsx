@@ -23,7 +23,7 @@ export function RunsChip({ projectId, onOpen }: { projectId: string; onOpen: () 
     refresh();
     // Atualiza por evento (barato) e por intervalo (cobre evento perdido, o
     // mesmo problema que fazia as bolinhas do sidebar travarem).
-    const off = window.maestrus.runs.onChange(() => refresh());
+    const off = window.maestrus.runs?.onChange?.(() => refresh());
     const iv = setInterval(refresh, 10000);
     return () => { try { off && off(); } catch {} clearInterval(iv); };
   }, [refresh]);
@@ -78,7 +78,7 @@ export default function RunsPanel({ projectId, onClose, global = false }: { proj
 
   useEffect(() => {
     load();
-    const off = window.maestrus.runs.onChange(() => load());
+    const off = window.maestrus.runs?.onChange?.(() => load());
     const iv = setInterval(load, 5000);
     return () => { try { off && off(); } catch {} clearInterval(iv); };
   }, [load]);

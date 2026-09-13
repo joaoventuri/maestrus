@@ -1324,6 +1324,29 @@ export function installMaestrusWeb() {
       loginCancel: async () => { try { return await link!.rpc('team.ai.loginCancel', {}, 8000); } catch { return { ok: true }; } },
       unbind: async () => { try { return await link!.rpc('team.ai.unbind', {}, 8000); } catch (e: any) { return { ok: false, error: e?.message }; } },
     },
+    // Execuções em segundo plano — vivem no HOST (run-store). Faltava no shim
+    // e o RunsChip do chat quebrava o web inteiro ao montar ('onChange' of
+    // undefined). Eventos não chegam por aqui: os componentes já fazem polling.
+    runs: {
+      list: async (projectId?: string) => {
+        if (!link) return [];
+        if (!projectId) return link.rpc('runs.list', {}, 8000).catch(() => []);
+        const r = parseId(projectId); if (!r) return [];
+        await ensureHost(r.hostId);
+        return link.rpc('runs.list', { projectId: r.projectId }, 8000).catch(() => []);
+      },
+      get: async (runId: string) => { if (!link) return null; return link.rpc('runs.get', { runId }, 8000).catch(() => null); },
+      log: async (runId: string) => { if (!link) return ''; return link.rpc('runs.log', { runId }, 15000).catch(() => ''); },
+      stop: async (runId: string) => { if (!link) return false; return link.rpc('runs.stop', { runId }, 8000).catch(() => false); },
+      start: async () => ({ ok: false, error: 'desktop_only' }),
+      activeCount: async (projectId?: string) => {
+        if (!link) return 0;
+        if (!projectId) return link.rpc('runs.activeCount', {}, 8000).catch(() => 0);
+        const r = parseId(projectId); if (!r) return 0;
+        return link.rpc('runs.activeCount', { projectId: r.projectId }, 8000).catch(() => 0);
+      },
+      onChange: (_h: any) => () => {},
+    },
     invite: {
       create: async () => ({ ok: false, error: 'desktop_only' }),
       state: async () => { const i = savedInvite(); return { ok: true, relayUrl: i?.relayUrl || '', hashJoin: _hashJoin, host: null, client: i ? { room: i.room || '', hostName: i.hostName || null, relayUrl: i.relayUrl } : null }; },
