@@ -342,7 +342,7 @@ function safeProjects() {
 // Guest read-only só pode ler; guest write pode operar sobre os projetos do
 // escopo. Canais que afetam a CONTA/HOST inteiro (delete, create, usage,
 // version, logout) NUNCA são expostos a um GUEST — só ao dono.
-const SHARE_READ_CHANNELS = new Set(['projects.list', 'projects.get', 'claude.loadHistory', 'ping', 'files.tree', 'files.read', 'files.readChunk', 'queue.list', 'runs.list', 'runs.get', 'runs.log', 'claudeMd.read', 'team.who']);
+const SHARE_READ_CHANNELS = new Set(['projects.list', 'projects.get', 'claude.loadHistory', 'ping', 'files.tree', 'files.read', 'files.readChunk', 'queue.list', 'runs.list', 'runs.get', 'runs.log', 'claudeMd.read', 'team.who', 'claude.status']);
 const SHARE_WRITE_CHANNELS = new Set([
   ...SHARE_READ_CHANNELS,
   'claude.send', 'claude.stop', 'projects.patch',
