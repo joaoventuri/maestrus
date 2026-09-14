@@ -16,7 +16,8 @@
     "edit": "Editar",
     "delete": "Excluir",
     "close": "Fechar",
-    "loading": "Carregando..."
+    "loading": "Carregando...",
+    "ok": "OK"
   },
   "boot": {
     "loading": "iniciando…"
@@ -85,7 +86,8 @@
     "loadOlder": "Carregar {n} mensagens anteriores",
     "attachTooBig": "Arquivo grande demais (máx. 20 MB).",
     "attachFail": "Falha ao enviar o anexo",
-    "toolsRan": "ferramentas"
+    "toolsRan": "ferramentas",
+    "loadOlderHost": "Carregar mensagens anteriores do host"
   },
   "settings": {
     "title": "Configurações",
@@ -991,7 +993,8 @@
     "active": "em uso",
     "hostOffline": "Host fora do ar",
     "teamBound": "Conta do time — reservada aos acessos compartilhados",
-    "teamShort": "time"
+    "teamShort": "time",
+    "teamBoundMsg": "Esta conta está reservada a um acesso compartilhado. Tire-a do acesso em Acesso Remoto para voltar a usá-la."
   },
   "runs": {
     "title": "Segundo plano",
@@ -1048,7 +1051,7 @@
     "shareOneHost": "Escolha conversas de UMA máquina só por link (um convite pertence a uma sala).",
     "shareNoRoom": "O host dessas conversas ainda não tem sala de convite — gere um convite nele primeiro.",
     "emailLabel": "Ou envie para um e-mail do Maestrus (opcional)",
-    "emailSent": "Enviado para {email} — as conversas aparecem quando essa pessoa logar.",
+    "emailSent": "Acesso liberado para {email} — aparece quando essa pessoa abrir o Maestrus logada com esse e-mail (não enviamos e-mail).",
     "emailNotFound": "Esse e-mail não tem conta no maestrus.cloud — use o link.",
     "emailFailed": "Não consegui registrar o envio — use o link.",
     "aiTitle": "Conta do Claude",
@@ -1071,7 +1074,22 @@
     "aiPoolShort": "{n} contas",
     "shareMain": "Conversa principal",
     "sharePartial": "parcial",
-    "sharePickHint": "Marque o projeto inteiro (forks futuros entram) ou abra e escolha conversa por conversa — o que ficar de fora não existe pro convidado."
+    "sharePickHint": "Marque o projeto inteiro (forks futuros entram) ou abra e escolha conversa por conversa — o que ficar de fora não existe pro convidado.",
+    "leftTitle": "Acesso encerrado",
+    "leftRevoked": "O dono encerrou o seu acesso a estas conversas. Se precisar, peça um novo convite.",
+    "leftExpired": "O seu acesso a estas conversas venceu. Peça ao dono um novo convite.",
+    "hostOff": "O Host está desligado — os acessos compartilhados só funcionam com ele ligado.",
+    "expires": "vence {date}",
+    "delivered": "entrou",
+    "notOpened": "ainda não abriu",
+    "online": "online agora",
+    "sharedWithMe": "Acessos compartilhados comigo",
+    "sharedWithMeSub": "Conversas que outras pessoas liberaram para o seu e-mail. Um acesso por vez.",
+    "enter": "Entrar",
+    "current": "atual",
+    "askNameTitle": "Como quer aparecer para a equipe?",
+    "askNameHint": "Seu nome assina o que você escreve e aparece para quem está na sala.",
+    "leftBanner": "Seu acesso a {host} foi encerrado pelo dono."
   },
   "llm": {
     "title": "Contas LLM",

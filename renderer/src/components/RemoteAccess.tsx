@@ -55,6 +55,9 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
   const [grants, setGrants] = useState<any[]>([]);
+  const [invScoped, setInvScoped] = useState(false);          // sou convidado com escopo → não compartilho nada
+  const [shareStatus, setShareStatus] = useState<Record<string, any>>({});   // grant_id → entrega por e-mail
+  const [sharedWithMe, setSharedWithMe] = useState<any[]>([]); // acessos que outros liberaram pro meu e-mail
   // Enviar por E-MAIL: se a pessoa tem conta no maestrus.cloud, o convite fica
   // na caixa dela e o app entra sozinho quando ela logar — nem link precisa.
   const [shareEmail, setShareEmail] = useState('');
@@ -64,7 +67,9 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
     // pedido de grant é roteado pra lá pelo main (um link = uma máquina).
     window.maestrus.projects.list().then((ps: any[]) => setAllProjects((ps || []).filter((p) => p.id !== 'maestrus' && p.id !== 'starter' && !String(p.id).startsWith('remote:cloud-')))).catch(() => {});
     inviteApi?.grants?.().then((r: any) => setGrants(r?.grants || [])).catch(() => {});
+    inviteApi?.shareStatus?.().then((r: any) => { if (r?.ok) { const m: Record<string, any> = {}; for (const sh of r.shares || []) if (sh.grant_id) m[sh.grant_id] = sh; setShareStatus(m); } }).catch(() => {});
   }
+  function loadSharedWithMe() { inviteApi?.sharedWithMe?.().then((r: any) => setSharedWithMe(r?.shares || [])).catch(() => {}); }
   useEffect(() => { if (shareOpen) loadShare(); }, [shareOpen]);
   // Escopo por CONVERSA. `sel` guarda `pid` (projeto inteiro, forks futuros
   // inclusos), `pid#main` (só a principal) e/ou `pid#<convId>` (forks). Um
@@ -172,8 +177,9 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
   }
 
   async function revokeGrant(g: any) {
-    setGrants((gs) => gs.filter((x) => x.id !== g.id));   // some na hora; o resto é pano de fundo
-    await inviteApi?.revokeGrant?.(g.id, g.hostId).catch(() => {});
+    const r = await inviteApi?.revokeGrant?.(g.id, g.hostId).catch((e: any) => ({ ok: false, error: String(e?.message || e) }));
+    if (r && r.ok === false) { setError(r.error || t('remote.errGeneric')); loadShare(); return; }
+    setGrants((gs) => gs.filter((x) => x.id !== g.id));
     loadShare();
   }
   // Grants do host vêm com ids CURTOS; a lista local usa remote:<host>:<id>.
@@ -192,6 +198,7 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
     inviteApi?.state?.().then((s: any) => {
       setInvHost(!!s?.host);
       setInvClient(!!s?.client);
+      setInvScoped(!!s?.client?.scoped);
     }).catch(() => {});
   }
 
@@ -199,7 +206,7 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
     window.maestrus.cloud.account().then(setAccount);
     window.maestrus.remote.hostState().then(setHost);
     window.maestrus.remote.clientState().then(setClient);
-    refreshInvite();
+    refreshInvite(); loadSharedWithMe();
     const offH = window.maestrus.remote.onHostState(setHost);
     const offC = window.maestrus.remote.onClientState((s) => { setClient(s); if (s.connected) onConnected?.(); });
     // Convite aceito por deep link (QR lido fora do app): espelha aqui.
@@ -460,7 +467,7 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                 {Array.isArray((host as any).peers) && (host as any).peers.length > 0 && (
                   <div className="remote-peers">
                     <Users size={13} />
-                    <span>{t('team.inRoom')}: {(host as any).peers.map((p: any) => p.name || p.deviceId.slice(0, 6)).join(', ')}</span>
+                    <span>{t('team.inRoom')}: {(host as any).peers.map((p: any) => (p.email && p.name) ? `${p.name} (${p.email})` : (p.email || p.name || p.deviceId.slice(0, 6))).join(', ')}</span>
                   </div>
                 )}
 
@@ -475,7 +482,7 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
         )}
 
         {/* ── Compartilhar SÓ conversas específicas (equipe via navegador) ── */}
-        {tab === 'host' && !isWeb && (
+        {tab === 'host' && !invScoped && (
           <details className="remote-advanced span-2" open={shareOpen} onToggle={(e: any) => setShareOpen(e.currentTarget.open)}>
             <summary>
               <ChevronDown size={14} className="remote-adv-chev" />
@@ -484,6 +491,9 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
             <div className="remote-adv-body">
               <p className="remote-explain" style={{ margin: 0 }}>{t('team.shareSub')}</p>
 
+              {!isWeb && !host.running && !(host as any).alwaysOn && (
+                <div className="cloud-hint" style={{ color: 'var(--accent)' }}>{t('team.hostOff')}</div>
+              )}
               <div className="share-pick">
                 <div className="share-pick-h">{t('team.sharePick')}</div>
                 <div className="cloud-hint" style={{ marginTop: 0, marginBottom: 6 }}>{t('team.sharePickHint')}</div>
@@ -613,7 +623,9 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                       <span className="share-grant-label">
                         {g.email ? <strong>{g.email} · </strong> : null}
                         {(g.p || []).slice(0, 3).map(nameOf).join(', ')}{(g.p || []).length > 3 ? ` +${g.p.length - 3}` : ''}
-                        <em> · {g.w ? t('team.shareWrite') : t('team.shareRead')} · {g.aiBound ? (g.aiCount > 1 ? t('team.aiPoolShort', { n: g.aiCount }) : t('team.aiOwn')) : t('team.aiHostShort')}</em>
+                        <em> · {g.w ? t('team.shareWrite') : t('team.shareRead')} · {g.aiBound ? (g.aiCount > 1 ? t('team.aiPoolShort', { n: g.aiCount }) : t('team.aiOwn')) : t('team.aiHostShort')}
+                          {g.online ? <> · <span style={{ color: 'var(--accent)' }}>{t('team.online')}</span></> : g.email ? <> · {shareStatus[g.id]?.claimed_at ? t('team.delivered') : t('team.notOpened')}</> : null}
+                          {g.e ? <> · {t('team.expires', { date: new Date(g.e).toLocaleDateString() })}</> : null}</em>
                       </span>
                       <button className="dev-del" title={t('team.aiCfg')} onClick={() => openAiCfg(g)}><UserRound size={13} /></button>
                       <button className="dev-del" title={t('team.shareRevoke')} onClick={() => revokeGrant(g)}><Trash2 size={13} /></button>
@@ -628,6 +640,29 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
         {/* ── CONECTAR ────────────────────────────────────────────────────── */}
         {tab === 'connect' && (
           <>
+            {account && sharedWithMe.length > 0 && (
+              <div className="cloud-card remote-card span-2">
+                <div className="remote-head">
+                  <Users size={24} />
+                  <div>
+                    <div className="remote-title">{t('team.sharedWithMe')}</div>
+                    <div className="remote-sub">{t('team.sharedWithMeSub')}</div>
+                  </div>
+                </div>
+                {sharedWithMe.map((sh: any) => (
+                  <div key={sh.id} className="remote-status" style={{ justifyContent: 'space-between', gap: 10 }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <strong>{sh.owner_name || sh.owner_email}</strong>
+                      <span style={{ opacity: .55, marginLeft: 6 }}>{sh.host_name || ''}</span>
+                    </span>
+                    <button className="cloud-submit" style={{ width: 'auto', padding: '6px 14px' }}
+                      onClick={async () => { const r = await inviteApi?.joinShare?.(sh.id).catch(() => null); if (r?.ok) { refreshInvite(); onConnected?.(); } else setError(t('invite.errCreate')); }}>
+                      <Link2 size={14} /> {t('team.enter')}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             {account && !isWeb && (
               <div className="cloud-card remote-card span-2">
                 <div className="remote-head">

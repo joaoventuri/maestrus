@@ -342,6 +342,7 @@ function loadMemberWs(): any {
   try { const j = JSON.parse(localStorage.getItem(LS_MEMBER_WS) || 'null'); return j && j.ownerId ? j : null; } catch { return null; }
 }
 let clientState = { connected: false, status: 'idle', hostName: null as string | null };
+let _hostDropTimer: any = null;
 const eventHandlers = new Set<(e: any) => void>();
 const clientStateHandlers = new Set<(s: any) => void>();
 const projectsChangedHandlers = new Set<(p?: any) => void>();
@@ -441,6 +442,10 @@ function startClientLink(url: string, token: string, viaInvite = false) {
           });
           emitProjectsChanged();
         }
+        if (p.type === 'project.updated' && p.project && !cachedProjects.some((cp) => cp.remoteProjectId === p.project.id)) {
+          cachedProjects = [...cachedProjects, tag(p.project)];   // projeto novo criado no host
+          emitProjectsChanged();
+        }
         // Projeto apagado no host (por qualquer device) → some da lista na hora.
         if (p.type === 'project.removed' && p.projectId) {
           const tid = `remote:${hostId}:${p.projectId}`;
@@ -448,11 +453,18 @@ function startClientLink(url: string, token: string, viaInvite = false) {
           cachedStubs = cachedStubs.filter((cp) => cp.id !== tid);
           emitProjectsChanged();
         }
+        if (p.type === 'team.revoked') { leaveInvite(String(p.reason || 'revoked')); return; }
         if (p.projectId && p.projectId !== '*') p.projectId = (p.projectId === 'maestrus') ? 'maestrus' : `remote:${hostId}:${p.projectId}`;
         eventHandlers.forEach((h) => h(p));
       }
     },
-    onPresence: (f) => { if (f.deviceId === hostId && f.online === true) refreshProjects(); }, // host voltou → recarrega projetos
+    onPresence: (f) => {
+      if (f.deviceId !== hostId) return;
+      if (f.online === true) { if (_hostDropTimer) { clearTimeout(_hostDropTimer); _hostDropTimer = null; } if (clientState.status === 'host-offline') { clientState = { ...clientState, status: 'online' }; emitClientState(); } refreshProjects().then(() => emitProjectsChanged()); return; }
+      // Host sumiu (notebook fechou): avisa em vez de deixar cada RPC estourar em
+      // 30s. Grace de 6s — em reconexão a presença pisca.
+      if (f.online === false && !_hostDropTimer) _hostDropTimer = setTimeout(() => { _hostDropTimer = null; if (link && link.isOpen()) { clientState = { ...clientState, status: 'host-offline' }; emitClientState(); } }, 6000);
+    },
   });
   link.connect();
   ensureHeartbeat();   // auto-reconexão do PWA em WAN (socket zumbi)
@@ -793,7 +805,20 @@ async function teamHello(l?: any): Promise<void> {
   try {
     const r = await lk.rpc('team.hello', payload, 8000);
     if (r && r.ok && r.sid) _teamSid = r.sid;
+    else if (r && r.ok === false && ['revoked', 'expired', 'invalid'].includes(String(r.error))) leaveInvite(String(r.error));
   } catch { /* host antigo sem team.hello → segue sem sid */ }
+}
+// Acesso encerrado (revogado, vencido, sala girada): limpa o convite salvo e
+// deixa o app num estado explícito — antes ficava "Conectado" com zero
+// projetos pra sempre, sem nenhuma explicação.
+let _leftReason: string | null = null;
+function leaveInvite(reason: string) {
+  _leftReason = reason;
+  _activeInviteCred = null; _teamSid = null;
+  try { localStorage.removeItem(LS_INVITE); } catch {}
+  try { link?.close(); } catch {}
+  link = null; hostId = null; cachedProjects = [];
+  clientState = { connected: false, status: 'revoked', hostName: null } as any; emitClientState(); emitProjectsChanged();
 }
 
 // Entra na sala e gruda no primeiro host que responder. Sem `hostId` os RPCs
@@ -1323,6 +1348,11 @@ export function installMaestrusWeb() {
     },
     // Convite: no web só existe o lado CLIENT — o navegador não roda CLI, então
     // não há host pra abrir sala.
+    persona: {
+      get: async () => { if (!link) return { style: null, options: [] }; return link.rpc('persona.get', {}, 8000).catch(() => ({ style: null, options: [] })); },
+      set: async (style: string) => { if (!link) return { ok: false }; return link.rpc('persona.set', { style }, 8000).catch(() => ({ ok: false })); },
+    },
+    models: { discovered: async () => [] },
     team: {
       getName: async () => ({ name: teamName() }),
       setName: async (n: string) => { setTeamName(n); return { ok: true }; },
@@ -1363,6 +1393,44 @@ export function installMaestrusWeb() {
     },
     invite: {
       create: async () => ({ ok: false, error: 'desktop_only' }),
+      // Dono no web: compartilhar/gerir acessos do host conectado (os canais
+      // team.* são OWNER_ONLY — convidado recebe acesso-negado, a UI esconde).
+      createScoped: async (opts: any) => {
+        if (!link) return { ok: false, error: 'not_connected' };
+        const projects = (opts?.projects || []).map((id: string) => { const r = parseId(id); return r ? r.projectId : id; });
+        const r: any = await link.rpc('team.createScoped', { projects, write: opts?.write !== false, ttlMs: opts?.ttlMs, email: opts?.email }, 15000).catch((e: any) => ({ ok: false, error: e?.message }));
+        if (r && r.ok && opts?.email && r.code) {
+          const a = getAccount();
+          const es = a ? await api('team_share', { license_key: a.licenseKey, op: 'create', email: String(opts.email), code: r.code, host_name: hostName || 'host', grant_id: r.grantId }).catch(() => null) : null;
+          r.emailSent = !!(es && es.ok); if (!r.emailSent) r.emailError = (es && es.error) || 'send_failed';
+        }
+        return r;
+      },
+      grants: async () => { if (!link) return { ok: true, grants: [] }; const r: any = await link.rpc('team.grants', {}, 8000).catch(() => null); return { ok: true, grants: ((r && r.grants) || []).map((g: any) => ({ ...g, hostId: null })) }; },
+      revokeGrant: async (id: string) => {
+        if (!link) return { ok: false };
+        const a = getAccount(); if (a) api('team_share', { license_key: a.licenseKey, op: 'revoke_grant', grant_id: String(id) }).catch(() => {});
+        return link.rpc('team.revokeGrant', { id }, 8000).catch(() => ({ ok: false }));
+      },
+      aiAdmin: async (op: string, grantId: string, _hostId: any, code?: string) => {
+        if (!link) return { ok: false, error: 'not_connected' };
+        const map: any = { status: 'team.ai.adminStatus', loginStart: 'team.ai.adminLoginStart', loginState: 'team.ai.adminLoginState', loginCode: 'team.ai.adminLoginCode', loginCancel: 'team.ai.adminLoginCancel', unbind: 'team.ai.adminUnbind', bindExisting: 'team.ai.adminBindExisting', listProfiles: 'team.ai.adminListProfiles' };
+        const ch = map[op]; if (!ch) return { ok: false, error: 'bad_op' };
+        return link.rpc(ch, { grantId, code }, 20000).catch((e: any) => ({ ok: false, error: e?.message }));
+      },
+      shareStatus: async () => { const a = getAccount(); if (!a) return { ok: false }; const r = await api('team_share', { license_key: a.licenseKey, op: 'sent' }).catch(() => null); return r && r.ok ? { ok: true, shares: r.shares || [] } : { ok: false }; },
+      sharedWithMe: async () => { const a = getAccount(); if (!a) return { ok: true, shares: [] }; const r = await api('team_share', { license_key: a.licenseKey, op: 'list' }).catch(() => null); return { ok: true, shares: (r && r.ok && r.shares) || [] }; },
+      joinShare: async (id: string) => {
+        const a = getAccount(); if (!a) return { ok: false, error: 'not_logged_in' };
+        const r = await api('team_share', { license_key: a.licenseKey, op: 'list' }).catch(() => null);
+        const sh = ((r && r.shares) || []).find((x: any) => String(x.id) === String(id));
+        if (!sh || !sh.code) return { ok: false, error: 'not_found' };
+        _activeInviteCred = null; try { localStorage.removeItem(LS_INVITE); } catch {}
+        const j = await joinInvite(sh.code, shareGrantIdOf(sh));
+        if (j && j.ok && !sh.claimed_at) api('team_share', { license_key: a.licenseKey, op: 'claim', id: sh.id }).catch(() => {});
+        return j;
+      },
+      leftReason: async () => { const r = _leftReason; _leftReason = null; return { reason: r }; },
       state: async () => { const i = savedInvite(); return { ok: true, relayUrl: i?.relayUrl || '', hashJoin: _hashJoin, host: null, client: i ? { room: i.room || '', hostName: i.hostName || null, relayUrl: i.relayUrl, scoped: !!(i.grant && i.grantSig) } : null }; },
       revoke: async () => ({ ok: true }),
       join: async (code: string) => joinInvite(code),
@@ -1532,6 +1600,9 @@ export function installMaestrusWeb() {
       create: async (name: string) => { if (!link) return { ok: false, error: 'not_connected' }; return link.rpc('claudeProfiles.create', { name }, 10000); },
       remove: async (id: string) => { if (!link) return { ok: false, error: 'not_connected' }; return link.rpc('claudeProfiles.remove', { id }, 10000); },
       setActive: async (id: string) => { if (!link) return { ok: false, error: 'not_connected' }; return link.rpc('claudeProfiles.setActive', { id }, 10000); },
+      // Por projeto = o host conectado (no web só há um host por vez).
+      listFor: async () => { if (!link) return { ok: false, error: 'not_connected' }; return link.rpc('claudeProfiles.list', {}, 10000); },
+      setActiveFor: async (_pid: string, id: string) => { if (!link) return { ok: false, error: 'not_connected' }; return link.rpc('claudeProfiles.setActive', { id }, 10000); },
       status: async (id: string) => { if (!link) return { ok: false, error: 'not_connected' }; return link.rpc('claudeProfiles.status', { id }, 20000); },
       loginStart: async (id: string) => { if (!link) return { ok: false, error: 'not_connected' }; return link.rpc('claudeProfiles.loginStart', { id }, 15000); },
       loginState: async () => { if (!link) return { ok: false, error: 'not_connected' }; return link.rpc('claudeProfiles.loginState', {}, 10000); },
@@ -1678,10 +1749,11 @@ export function installMaestrusWeb() {
         const r = parseId(projectId); if (!r || !link) return false;
         return link.rpc('queue.clear', { projectId: r.projectId }, 8000).catch(() => false);
       },
-      loadHistory: async (projectId: string) => {
-        if (projectId === 'maestrus') { const ok = await ensureMaestroHost(); if (!ok || !link) return []; return link.rpc('claude.loadHistory', { projectId: 'maestrus' }, 30000).catch(() => []); }
+      loadHistory: async (projectId: string, opts?: any) => {
+        const limit = opts && opts.limit ? Number(opts.limit) : undefined;
+        if (projectId === 'maestrus') { const ok = await ensureMaestroHost(); if (!ok || !link) return []; return link.rpc('claude.loadHistory', { projectId: 'maestrus', limit }, 30000).catch(() => []); }
         const r = parseId(projectId); if (!r) return []; await ensureHost(r.hostId); if (!link) return [];
-        try { return await link.rpc('claude.loadHistory', { projectId: r.projectId }, 30000); }
+        try { return await link.rpc('claude.loadHistory', { projectId: r.projectId, limit }, 30000); }
         catch (e: any) {
           // Host dormindo/di trocado → NÃO devolve [] cru (a UI mostraria "chat
           // vazio" e o usuário acha que perdeu a conversa). Acorda o host e tenta
@@ -1718,6 +1790,10 @@ export function installMaestrusWeb() {
       },
       listMemories: async () => { if (!link) return []; return link.rpc('claude.listMemories', {}, 15000).catch(() => []); },
       dispatch: noop, // orquestração remota é desktop-only por ora
+      compactRestore: async (projectId: string) => {
+        const r = parseId(projectId); if (!r || !link) return { ok: false, error: 'not_connected' };
+        return link.rpc('claude.compactRestore', { projectId: r.projectId }, 60000).catch((e: any) => ({ ok: false, error: e?.message }));
+      },
       compact: async (projectId: string, opts?: any) => {
         if (projectId === 'maestrus') { const ok = await ensureMaestroHost(); if (!ok || !link) return { ok: false, error: 'host-starting' }; return link.rpc('claude.compact', { projectId: 'maestrus', focus: opts?.focus }, 180000).catch((e: any) => ({ ok: false, error: String(e && e.message || e) })); }
         const r = parseId(projectId); if (!r || !link) return { ok: false, error: 'sem conexão' };
@@ -1833,11 +1909,13 @@ export function installMaestrusWeb() {
     claudeMd: {
       read: async (id: string) => {
         const a = getAccount(); const r = parseId(id);
+        if (r && link && hostId && clientState.connected) { try { return await link.rpc('claudeMd.read', { projectId: r.projectId }, 15000); } catch {} }
         if (!a || !r) return { exists: false, path: null, content: '' };
         const res = await api('cloud_file', { license_key: a.licenseKey, op: 'read', project_id: r.projectId, path: 'CLAUDE.md' }).catch(() => ({}));
         return { exists: !!res.exists, path: 'CLAUDE.md', content: res.content || '' };
       },
       write: async (id: string, content: string) => {
+        { const r = parseId(id); if (r && link && hostId && clientState.connected) { try { return await link.rpc('claudeMd.write', { projectId: r.projectId, content }, 15000); } catch {} } }
         const a = getAccount(); const r = parseId(id);
         if (!a || !r) return { exists: false, path: null, content };
         await api('cloud_file', { license_key: a.licenseKey, op: 'write', project_id: r.projectId, path: 'CLAUDE.md', content }).catch(() => {});

@@ -19,6 +19,7 @@ const codexAuth = require('./codex-auth'); // login do Codex CLI (device-auth) p
 const claudeAuth = require('./claude-auth'); // estado da conta Claude DO HOST (client pergunta)
 function ptyForRH(p) { const e = p && p.engine; return (e === 'codex' || e === 'codex-api') ? codexPty : claudePty; }
 const claudeProfiles = require('./claude-profiles');
+const claudeMd = require('./claude-md');
 const claudePowers = require('./claude-powers');
 const turnQueue = require('./turn-queue');
 const runStore = require('./run-store'); // fila de turno (host é o dono)
@@ -160,6 +161,17 @@ function teamAiProfileFor(from) {
 // Recriar o acesso do MESMO e-mail (revogou e gerou de novo) não pode
 // perder a conta do Claude configurada: o pool do acesso anterior desse
 // e-mail passa pro novo. Sem isso o time caía silenciosamente na conta do host.
+// Revogar um acesso solta as contas dele: perfis "Equipe:" (criados só pra
+// aquele acesso) são apagados; conta do dono reaproveitada volta a ser dele.
+// Sem isso o `team_bound` travava a conta do dono pra sempre, em silêncio.
+function cleanupGrantAi(grantId) {
+  const key = 'g:' + String(grantId);
+  const pool = teamAiPool(key);
+  teamAiSetPool(key, []);
+  for (const pid of pool) {
+    try { const prof = claudeProfiles.list().profiles.find((x) => x.id === pid); if (prof && String(prof.name || '').startsWith('Equipe:')) claudeProfiles.remove(pid); } catch {}
+  }
+}
 function inheritTeamAi(newGrantId, email, grants) {
   if (!email) return;
   const prev = (grants || []).filter((g) => g && g.id !== newGrantId && g.email === email && teamAiPool('g:' + g.id).length)
@@ -186,6 +198,9 @@ function dropGrantBindings(grantId) {
   let n = 0;
   for (const [did, b] of teamBindings) {
     if (b && b.grantId === String(grantId)) {
+      // Avisa ANTES de cortar: sem isso o convidado ficava com "pensando…"
+      // eterno e uma tela de projetos vazia sem saber por quê.
+      try { sendTo(did, 'claude', { type: 'team.revoked', grantId: String(grantId), reason: 'revoked' }); } catch {}
       teamBindings.delete(did);
       subscribers.delete(did);
       linkOf.delete(did);
@@ -326,7 +341,7 @@ function safeProjects() {
 // Guest read-only só pode ler; guest write pode operar sobre os projetos do
 // escopo. Canais que afetam a CONTA/HOST inteiro (delete, create, usage,
 // version, logout) NUNCA são expostos a um GUEST — só ao dono.
-const SHARE_READ_CHANNELS = new Set(['projects.list', 'projects.get', 'claude.loadHistory', 'ping', 'files.tree', 'files.read', 'files.readChunk', 'queue.list', 'runs.list', 'runs.get', 'runs.log']);
+const SHARE_READ_CHANNELS = new Set(['projects.list', 'projects.get', 'claude.loadHistory', 'ping', 'files.tree', 'files.read', 'files.readChunk', 'queue.list', 'runs.list', 'runs.get', 'runs.log', 'claudeMd.read']);
 const SHARE_WRITE_CHANNELS = new Set([
   ...SHARE_READ_CHANNELS,
   'claude.send', 'claude.stop', 'projects.patch',
@@ -335,6 +350,7 @@ const SHARE_WRITE_CHANNELS = new Set([
   'queue.list', 'queue.enqueue', 'queue.remove', 'queue.reorder', 'queue.clear', 'persona.get',
   // Execuções em segundo plano: ver é leitura; iniciar/parar mexe na máquina.
   'runs.list', 'runs.get', 'runs.log', 'runs.stop', 'runs.start', 'runs.activeCount',
+  'claudeMd.write', 'claudeMd.ensure',
 ]);
 // Canais GLOBAIS da conta — negados a QUALQUER não-dono (guest E membro): mexem
 // na conta Claude do host (logout desloga o OAuth do dono) ou vazam billing.
@@ -464,6 +480,7 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
       const sid = nodeCrypto.randomBytes(12).toString('base64url');
       teamBindings.set(from, { pids: null, write: true, name, sid });
       subscribers.set(from, { pids: null, write: true });
+      if (name) { peers.set(from, { ...(peers.get(from) || { deviceId: from, since: Date.now() }), deviceId: from, name }); onState && onState(getState()); }
       return reply({ ok: true, sid, full: true });
     }
     // Convidado com escopo: grant assinado + ainda listado (revogável) na loja.
@@ -473,15 +490,26 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
       if (!rec) return reply({ ok: false, error: 'revoked' });
       const sid = nodeCrypto.randomBytes(12).toString('base64url');
       const pids = new Set(g.p.map(String));
-      teamBindings.set(from, { pids, write: !!g.w, name, sid, grantId: g.id });
+      const exp = Number(g.e || rec.e) || null;
+      if (exp && Date.now() > exp) return reply({ ok: false, error: 'expired' });
+      teamBindings.set(from, { pids, write: !!g.w, name, sid, grantId: g.id, exp });
       subscribers.set(from, { pids, write: !!g.w });
-      return reply({ ok: true, sid, pids: [...pids], write: !!g.w });
+      // Presença com identidade: o dono vê "tecnologia@ · Maria", não "4f2a1b".
+      peers.set(from, { ...(peers.get(from) || { deviceId: from, since: Date.now() }), deviceId: from, name: name || (peers.get(from) || {}).name || null, email: rec.email || null, grantId: g.id });
+      onState && onState(getState());
+      return reply({ ok: true, sid, pids: [...pids], write: !!g.w, expiresAt: exp });
     }
     return reply({ ok: false, error: 'invalid' });
   }
   if (!isShare && teamSecret) {
     const bound = teamBindings.get(from);
     const sidOk = !!(bound && payload && payload.__sid === bound.sid);
+    if (bound && sidOk && bound.exp && Date.now() > bound.exp) {
+      // O acesso venceu com a pessoa dentro: cai na hora, com motivo claro.
+      try { sendTo(from, 'claude', { type: 'team.revoked', grantId: bound.grantId, reason: 'expired' }); } catch {}
+      teamBindings.delete(from); subscribers.delete(from);
+      return fail('expired');
+    }
     if (bound && sidOk) {
       subscribers.set(from, { pids: bound.pids, write: bound.write });
       if (bound.pids !== null) {
@@ -604,6 +632,9 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
           return reply(saved);
         } catch (e) { return reply({ ok: false, error: String(e && e.message || e) }); }
       }
+      case 'claudeMd.read': { const p = projectStore.get(basePid(payload.projectId)); if (!p) return fail('Projeto não encontrado'); return reply(claudeMd.read(p)); }
+      case 'claudeMd.write': { const p = projectStore.get(basePid(payload.projectId)); if (!p) return fail('Projeto não encontrado'); return reply(claudeMd.write(p, String(payload.content || ''))); }
+      case 'claudeMd.ensure': { const p = projectStore.get(basePid(payload.projectId)); if (!p) return fail('Projeto não encontrado'); return reply(claudeMd.ensure(p)); }
       case 'claude.loadHistory': {
         const p = projectStore.get(payload.projectId);
         if (!p) return reply([]);
@@ -611,16 +642,16 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
         // sem re-ler nem re-parsear o .jsonl (era caro e, com o host ocupado num
         // turno, ficava LENTÍSSIMO — o usuário reiniciava o host pra "acelerar").
         let meta = null; try { meta = claudePty.sessionMeta ? claudePty.sessionMeta(p) : null; } catch {}
-        const cacheKey = payload.projectId;
+        const TAIL = Math.min(Math.max(Number(payload.limit) || 150, 50), 1500);
+        const cacheKey = payload.projectId + ':' + TAIL;
         const hit = _histCache.get(cacheKey);
-        if (hit && meta && hit.mtime === meta.mtime && hit.size === meta.size) return reply(hit.payload);
+        if (hit && meta && hit.mtime === meta.mtime && hit.size === meta.size) { _histCache.delete(cacheKey); _histCache.set(cacheKey, hit); return reply(hit.payload); }
 
-        const full = await claudePty.loadHistory(p);
+        const full = await ptyForRH(p).loadHistory(p, { maxLines: TAIL * 4 });
         // Payload ENXUTO: a resposta antiga (400 msgs × 40KB) chegava a ~16MB e
         // ENTUPIA o buffer de saída do host no relay → backlog → tudo lento (só
         // reiniciar o host limpava). Agora ~150 msgs com textos menores = frame
         // pequeno e rápido. "Carregar mais" busca o resto sob demanda.
-        const TAIL = 150;
         const MAX_TEXT = 10_000;
         const MAX_INPUT_JSON = 6_000;
         const tail = full.length > TAIL ? full.slice(full.length - TAIL) : full;
@@ -734,8 +765,8 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
       }
       case 'team.grants': {
         const all = (projectStore.getSetting('invite_grants') || [])
-          .filter((g) => g && !g.revoked)
-          .map((g) => ({ ...g, aiBound: teamAiPool('g:' + g.id).length > 0, aiCount: teamAiPool('g:' + g.id).length }));
+          .filter((g) => g && !g.revoked && (!g.e || Date.now() < g.e))
+          .map((g) => ({ ...g, aiBound: teamAiPool('g:' + g.id).length > 0, aiCount: teamAiPool('g:' + g.id).length, online: [...teamBindings.values()].some((b) => b.grantId === g.id) }));
         return reply({ ok: true, grants: all });
       }
       case 'team.revokeGrant': {
@@ -745,6 +776,7 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
           projectStore.setSetting('invite_grants', all);
         } catch {}
         dropGrantBindings(payload.id);   // corta quem JÁ está dentro, agora
+        cleanupGrantAi(payload.id);
         return reply({ ok: true });
       }
 
@@ -761,7 +793,17 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
         // Conta do AUTOR: se este device plugou a própria conta do Claude, o
         // turno roda no perfil dele — mesma conversa, gasto separado.
         const prof = teamAiProfileFor(from);
-        await ptyForRH(p).send(clampForRemote(p), msg, prof ? { profileId: prof } : {});
+        try {
+          await ptyForRH(p).send(clampForRemote(p), msg, prof ? { profileId: prof } : {});
+        } catch (e) {
+          // Alguém (outro device, outra pessoa) está no meio de um turno nesta
+          // conversa: entra na fila do host em vez de derrubar o turno dele.
+          if (e && e.code === 'turn_in_progress') {
+            const item = turnQueue.enqueue(payload.projectId, { text: msg, author: author || undefined, profileId: prof || undefined });
+            return reply({ ok: true, queued: true, item });
+          }
+          throw e;
+        }
         return reply({ ok: true });
       }
       case 'claude.stop': return reply(claudePty.kill(payload.projectId) || codexPty.kill(payload.projectId));
@@ -1030,18 +1072,6 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
       case 'claudePowers.skillsDelete': return claudePowers.skills.remove(payload.id).then(reply);
       case 'claudePowers.mcpList': return claudePowers.mcp.list().then(reply);
       case 'claudePowers.mcpRemove': return claudePowers.mcp.remove(payload.name).then(reply);
-      // ─── Multi-conta do Claude CLI (perfis) — controlável do web/PWA ───────
-      case 'claudeProfiles.list': return reply(claudeProfiles.list());
-      case 'claudeProfiles.setActive': return reply(claudeProfiles.setActive(payload.id));
-      case 'claudeProfiles.create': return reply(claudeProfiles.create(payload.name));
-      case 'claudeProfiles.remove': return reply(claudeProfiles.remove(payload.id));
-      case 'claudeProfiles.status': {
-        return claudeProfiles.status(payload.id).then((r) => reply(r)).catch((e) => reply({ ok: false, error: String(e && e.message || e) }));
-      }
-      case 'claudeProfiles.loginStart': return reply(claudeProfiles.loginStart(payload.id));
-      case 'claudeProfiles.loginState': return reply(claudeProfiles.loginState());
-      case 'claudeProfiles.loginCode': return reply(claudeProfiles.loginCode(payload.code));
-      case 'claudeProfiles.loginCancel': return reply(claudeProfiles.loginCancel());
       // Estado da conta Claude DO HOST. Sem isto o client checava o login da
       // PRÓPRIA máquina e concluía "sem Claude, só Codex" mesmo com o host
       // logado — as telas ficavam dessincronizadas.
@@ -1190,6 +1220,7 @@ function ensureEventPipe() {
 function startTeamRoom(url) {
   if (!url) return { ok: false, error: 'url_required' };
   if (teamLink && teamRoomUrl === url) return { ok: true, already: true };
+  if (teamLink) { for (const [did, l] of linkOf) if (l === teamLink) { linkOf.delete(did); subscribers.delete(did); teamBindings.delete(did); peers.delete(did); } }
   try { teamLink && teamLink.close(); } catch {}
   const tl = new RelayLink({
     url, token: '',
@@ -1219,6 +1250,7 @@ function startTeamRoom(url) {
   return { ok: true };
 }
 function stopTeamRoom() {
+  if (teamLink) { for (const [did, l] of linkOf) if (l === teamLink) { linkOf.delete(did); subscribers.delete(did); teamBindings.delete(did); peers.delete(did); } }
   try { teamLink && teamLink.close(); } catch {}
   teamLink = null; teamRoomUrl = null;
   onState && onState(getState());
@@ -1232,14 +1264,22 @@ function refreshProjects() { if (link) link.registerHost(hostInfo()); if (teamLi
 // pra reconexões continuarem autenticando).
 function updateToken(token) { if (link && token) link.opts.token = token; }
 
-function stop() {
+function stop({ keepTeam = false } = {}) {
+  try { link && link.close(); } catch {}
+  link = null;
+  if (keepTeam && teamLink) {
+    // Sair da conta Maestrus não pode derrubar a sala de equipe (a conta é
+    // opcional). Mantém o pipe de eventos, os bindings e os devices da sala.
+    for (const [did, l] of linkOf) if (l !== teamLink) { linkOf.delete(did); subscribers.delete(did); peers.delete(did); }
+    state = { running: false, status: 'idle', error: null };
+    onState && onState(getState());
+    return { ok: true };
+  }
   try { unsub && unsub(); } catch {}
   unsub = null;
   subscribers.clear();
   peers.clear();
   teamBindings.clear();
-  try { link && link.close(); } catch {}
-  link = null;
   try { teamLink && teamLink.close(); } catch {}
   teamLink = null; teamRoomUrl = null;
   linkOf.clear();
@@ -1248,24 +1288,61 @@ function stop() {
   return { ok: true };
 }
 
+// Quem pode receber `project.updated` de um projeto: acesso total, projeto
+// inteiro OU qualquer conversa dele (um convidado só de fork também precisa
+// saber que o fork foi renomeado/apagado).
+function subCanSeeProject(entry, pid) {
+  if (!entry) return false;
+  if (entry.pids === null || entry.pids.has(pid)) return true;
+  const prefix = pid + '#';
+  for (const x of entry.pids) if (x.startsWith(prefix)) return true;
+  return false;
+}
+// A visão que ESTE subscriber tem do projeto (parcial = só as conversas do escopo).
+function scopedView(entry, safe) {
+  if (!entry || entry.pids === null || entry.pids.has(safe.id)) return safe;
+  const prefix = safe.id + '#';
+  const picked = [...entry.pids].filter((x) => x.startsWith(prefix)).map((x) => x.slice(prefix.length));
+  return { ...safe, conversations: (safe.conversations || []).filter((c) => picked.includes(String(c.id))), mainShared: picked.includes('main'), partial: true };
+}
+let _onProjectsChanged = null;   // main injeta: a JANELA do host também precisa saber
+function setOnProjectsChanged(fn) { _onProjectsChanged = fn; }
+function notifyProjectsChanged() { try { _onProjectsChanged && _onProjectsChanged(); } catch {} }
+
 function broadcastProjectPatch(updated) {
-  if ((!link && !teamLink) || subscribers.size === 0 || !updated) return;
+  if (!updated) return;
+  notifyProjectsChanged();
+  if ((!link && !teamLink) || subscribers.size === 0) return;
   // SANITIZA (safeProject) — antes mandava o objeto CRU do projectStore, vazando
   // codeDir/localPath/ssh que a lista inicial deliberadamente omite. E filtra por
-  // escopo do subscriber.
+  // escopo do subscriber. Envia pela SALA em que o device fala conosco (sendTo):
+  // mandar pelo link da conta pra um device da sala do convite era target-offline.
   const safe = safeProject(updated);
   if (!safe) return;
   for (const [did, entry] of subscribers) {
-    if (!subCanSeePid(entry, safe.id)) continue;
-    try { link.sendEvent(did, 'claude', { type: 'project.updated', project: safe }); } catch {}
+    if (!subCanSeeProject(entry, safe.id)) continue;
+    try { sendTo(did, 'claude', { type: 'project.updated', project: scopedView(entry, safe) }); } catch {}
   }
 }
 
 function broadcastProjectRemoved(pid) {
-  if ((!link && !teamLink) || subscribers.size === 0 || !pid) return;
+  if (!pid) return;
+  notifyProjectsChanged();
+  if ((!link && !teamLink) || subscribers.size === 0) return;
   for (const [did, entry] of subscribers) {
-    if (!subCanSeePid(entry, pid)) continue;
-    try { link.sendEvent(did, 'claude', { type: 'project.removed', projectId: pid }); } catch {}
+    if (!subCanSeeProject(entry, basePid(pid))) continue;
+    try { sendTo(did, 'claude', { type: 'project.removed', projectId: pid }); } catch {}
+  }
+}
+
+// Evento avulso do host (ex.: execuções em 2º plano) pros clients, com o
+// mesmo filtro de escopo do pipe de eventos do Claude.
+function broadcastEvent(payload) {
+  if ((!link && !teamLink) || subscribers.size === 0 || !payload) return;
+  const evPid = payload.projectId || (payload.run && payload.run.projectId) || null;
+  for (const [did, entry] of subscribers) {
+    if (!subCanSeePid(entry, evPid)) continue;
+    try { sendTo(did, 'claude', payload); } catch {}
   }
 }
 
@@ -1277,5 +1354,5 @@ function setOnState(fn) { onState = fn; }
 function subscriberCount() { return subscribers.size; }
 
 module.exports = {
-  inheritTeamAi,
+  inheritTeamAi, cleanupGrantAi, broadcastProjectRemoved, broadcastEvent, setOnProjectsChanged,
   setTeamSecret, teamAiAdmin, dropGrantBindings, startTeamRoom, stopTeamRoom, teamRoomActive, setEnsureTeamRoom, start, stop, refreshProjects, updateToken, getState, isHealthy, setOnState, broadcastProjectPatch, subscriberCount };

@@ -685,6 +685,7 @@ app.whenReady().then(async () => {
   // direto em disco e NÃO morrem com o app — reidrata pra UI voltar a vê-los.
   try { runStore.rehydrate(); } catch {}
   try { remoteHost.setEnsureTeamRoom(() => ensureTeamRoom()); } catch {}
+  try { remoteHost.setOnProjectsChanged(() => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('projects:changed'); } catch {} }); } catch {}
   try { remoteClient.setAuthorName(userName()); } catch {}
   // `maestrus://` — o convite vira link clicável e QR que abre o app já pareando.
   try {
@@ -1477,7 +1478,7 @@ ipcMain.handle('projects:list', async () => {
   // Projetos compartilhados: não passam pelo merged (IDs distintos "shared:...").
   return [...local, ...merged.values(), ...shared];
 });
-ipcMain.handle('projects:get', async (_e, id) => projectStore.get(id));
+ipcMain.handle('projects:get', async (_e, id) => projectStore.get(id) || (remoteClient.listProjects().find((p) => p.id === id) || null));
 
 ipcMain.handle('projects:create', async (_e, input) => {
   const project = projectStore.createDraft(input);
@@ -1509,6 +1510,7 @@ ipcMain.handle('projects:create', async (_e, input) => {
   project.sessionDir = null;
 
   const saved = projectStore.save(project);
+  try { remoteHost.broadcastProjectPatch(saved); } catch {}   // clients veem o projeto novo na hora
   return saved;
 });
 
@@ -1562,7 +1564,7 @@ ipcMain.handle('projects:delete', async (_e, id) => {
   }
   claudePty.kill(id);
   try { sshManager.disconnect(id); sshVault.remove(id); } catch {}
-  const ok = projectStore.remove(id);
+  const ok = (() => { const _ok = projectStore.remove(id); try { remoteHost.broadcastProjectRemoved(id); } catch {} return _ok; })();
   return ok;
 });
 
@@ -1657,7 +1659,7 @@ ipcMain.handle('cloud:validate', async () => cloud.validate());
 ipcMain.handle('cloud:logout', async () => {
   // Ao sair, para o host (não faz sentido ficar anunciando sem conta).
   if (_hostRefreshTimer) { clearInterval(_hostRefreshTimer); _hostRefreshTimer = null; }
-  try { remoteHost.stop(); } catch {}
+  try { remoteHost.stop({ keepTeam: true }); } catch {}   // a conta é opcional: a sala de equipe continua
   return cloud.logout();
 });
 ipcMain.handle('cloud:setSyncInterval', async (_e, sec) => {
@@ -1712,6 +1714,8 @@ async function startHost() {
     setTimeout(() => { _identityHealing = false; startHost().catch(() => {}); }, 800);
   };
   const r = remoteHost.start({ url: withName(t.url), token: t.token, deviceId: cloud.getDeviceId(), refreshTokenFn, onIdentityConflict });
+  // Ligar o host reabre também a sala de convite (se existe).
+  try { const h = getInviteHost(); if (h && h.secret) ensureTeamRoom(); } catch {}
   if (_hostRefreshTimer) clearInterval(_hostRefreshTimer);
   _hostRefreshTimer = setInterval(async () => {
     const tok = await refreshTokenFn();
@@ -1828,7 +1832,10 @@ function ensureTeamRoom({ rotate = false } = {}) {
     if (rotate) { try { projectStore.setSetting('invite_grants', []); } catch {} }
   }
   try { remoteHost.setTeamSecret(hostInv.secret); } catch {}
-  try { remoteHost.startTeamRoom(inviteUrl(hostInv.secret, cloud.getDeviceId(), 'host')); } catch {}
+  // O switch "Host" é o interruptor-mestre de TUDO que expõe esta máquina —
+  // inclusive a sala de convite. Antes a sala subia no boot mesmo com o host
+  // desligado: convidados trabalhavam nas conversas de uma máquina "desligada".
+  if (hostAlwaysOn()) { try { remoteHost.startTeamRoom(inviteUrl(hostInv.secret, cloud.getDeviceId(), 'host')); } catch {} }
   return hostInv;
 }
 
@@ -1837,6 +1844,10 @@ function ensureTeamRoom({ rotate = false } = {}) {
 function startClientViaInvite(secret) {
   if (!secret) return { ok: false, error: 'no_secret' };
   if (_clientRefreshTimer) { clearInterval(_clientRefreshTimer); _clientRefreshTimer = null; }
+  // O client reaproveita um link vivo pelo deviceId (que é constante): com a
+  // sala da CONTA aberta, o convite era descartado em silêncio — "entrou" e
+  // nada aparecia. Fecha o link antigo antes de abrir a sala do convite.
+  try { remoteClient.disconnect(); } catch {}
   const did = clientDid();
   remoteClient.setSelfHostId(cloud.getDeviceId());   // não se descobrir
   return remoteClient.startDiscovery({ url: inviteUrl(secret, did, 'client'), token: '', deviceId: did });
@@ -1874,7 +1885,7 @@ ipcMain.handle('invite:state', async () => {
     ok: true,
     relayUrl: inviteRelayUrl(),
     host: h ? { room: h.room, createdAt: h.createdAt || null, running } : null,
-    client: c ? { room: c.room, hostName: c.hostName || null, relayUrl: c.relayUrl || null } : null,
+    client: c ? { room: c.room, hostName: c.hostName || null, relayUrl: c.relayUrl || null, scoped: !!(c.grant && c.grantSig), viaEmail: !!c.shareGrantId } : null,
   };
 });
 
@@ -1882,6 +1893,7 @@ ipcMain.handle('invite:state', async () => {
 // assina prova válida, e o código que circulou por aí vira papel velho.
 ipcMain.handle('invite:revoke', async () => {
   try { projectStore.setSetting('invite_host', null); } catch {}
+  try { for (const g of (projectStore.getSetting('invite_grants') || [])) { if (g && g.id) remoteHost.cleanupGrantAi(g.id); } } catch {}
   try { projectStore.setSetting('invite_grants', []); } catch {}   // sala morreu, grants junto
   try { remoteHost.setTeamSecret(null); } catch {}
   try { remoteHost.stopTeamRoom(); } catch {}   // a sala da CONTA fica de pé
@@ -1948,10 +1960,30 @@ ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
   }
   return out;
 });
+ipcMain.handle('invite:shareStatus', async () => {
+  try { if (!(cloud.getAccount && cloud.getAccount())) return { ok: false }; const r = await cloud.teamShare('sent'); return r && r.ok ? { ok: true, shares: r.shares || [] } : { ok: false }; }
+  catch { return { ok: false }; }
+});
+// Acessos compartilhados COMIGO (por e-mail): lista completa, pra trocar de sala.
+ipcMain.handle('invite:sharedWithMe', async () => {
+  try { if (!(cloud.getAccount && cloud.getAccount())) return { ok: true, shares: [] }; const r = await cloud.teamShare('list'); return { ok: true, shares: (r && r.ok && r.shares) || [] }; }
+  catch { return { ok: true, shares: [] }; }
+});
+ipcMain.handle('invite:joinShare', async (_e, id) => {
+  try {
+    const r = await cloud.teamShare('list'); const sh = ((r && r.shares) || []).find((x) => String(x.id) === String(id));
+    if (!sh || !sh.code) return { ok: false, error: 'not_found' };
+    try { projectStore.setSetting('invite_client', null); } catch {}
+    const j = joinInvite(sh.code, { viaEmail: true });
+    if (j && j.ok && !sh.claimed_at) cloud.teamShare('claim', { id: sh.id }).catch(() => {});
+    try { mainWindow?.webContents.send('projects:changed'); } catch {}
+    return j;
+  } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+});
 ipcMain.handle('invite:grants', async () => {
   const _aiMap = (() => { try { return projectStore.getSetting('team_ai_profiles') || {}; } catch { return {}; } })();
   const grants = (projectStore.getSetting('invite_grants') || [])
-    .filter((g) => g && !g.revoked)
+    .filter((g) => g && !g.revoked && (!g.e || Date.now() < g.e))
     .map((g) => { const v = _aiMap['g:' + g.id]; const n = Array.isArray(v) ? v.filter(Boolean).length : (v ? 1 : 0); return { ...g, aiBound: n > 0, aiCount: n }; });
   // Sendo client: soma os grants dos hosts conectados (com o dono do grant
   // marcado, pra revogação ir pro lugar certo).
@@ -1994,6 +2026,7 @@ ipcMain.handle('invite:revokeGrant', async (_e, id, hostId) => {
     projectStore.setSetting('invite_grants', all);
   } catch {}
   try { remoteHost.dropGrantBindings(id); } catch {}   // acesso morre AGORA
+  try { remoteHost.cleanupGrantAi(id); } catch {}      // solta a(s) conta(s) do Claude
   return { ok: true };
 });
 
@@ -2009,6 +2042,7 @@ function buildTeamHello() {
 }
 function startClientViaInviteRaw(room, proof) {
   if (_clientRefreshTimer) { clearInterval(_clientRefreshTimer); _clientRefreshTimer = null; }
+  try { remoteClient.disconnect(); } catch {}   // idem startClientViaInvite
   const did = clientDid();
   remoteClient.setSelfHostId(cloud.getDeviceId());
   const base = inviteRelayUrl();
@@ -2027,7 +2061,7 @@ function joinInvite(code, { viaEmail = false } = {}) {
     // Colar um código é "quero ser client desta máquina". Já o acesso que
     // chegou pela CONTA (e-mail) só soma projetos à lista — quem tem o próprio
     // host continua host, com as conversas do dono ao lado das suas.
-    if (!viaEmail) projectStore.setSetting('app_mode', 'client');
+    if (!viaEmail && !p.scoped) projectStore.setSetting('app_mode', 'client');
   } catch {}
   remoteClient.setTeamHello(buildTeamHello);
   return { ok: true, room: p.room, hostName: p.hostName, scoped: !!p.scoped };
@@ -2099,7 +2133,7 @@ async function syncEmailShares() {
 const claimEmailShares = syncEmailShares;   // nome antigo (boot)
 setInterval(() => { syncEmailShares().catch(() => {}); }, 3 * 60 * 1000);
 function resumeInvites() {
-  try { const h = getInviteHost(); if (h && h.secret) ensureTeamRoom(); } catch {}
+  try { const h = getInviteHost(); if (h && h.secret && hostAlwaysOn()) ensureTeamRoom(); } catch {}
   try {
     const c = getInviteClient();
     if (c) remoteClient.setTeamHello(buildTeamHello);
@@ -2111,7 +2145,16 @@ function resumeInvites() {
 // ─── Maestrus remoto: modo CLIENT ───────────────────────────────────────────
 let _clientRefreshTimer = null;
 remoteClient.setOnState((s) => { try { mainWindow?.webContents.send('remote:clientState', s); } catch {} });
+function leaveInviteWithReason(reason, hostName) {
+  try { projectStore.setSetting('invite_client', null); } catch {}
+  try { remoteClient.setTeamHello(null); } catch {}
+  try { remoteClient.disconnect(); } catch {}
+  try { mainWindow?.webContents.send('invite:left', { reason: reason || 'revoked', hostName: hostName || null }); } catch {}
+  try { mainWindow?.webContents.send('projects:changed'); } catch {}
+}
+remoteClient.setOnTeamRevoked((hostId, reason) => leaveInviteWithReason(reason, null));
 remoteClient.setOnRemoteEvent((payload) => {
+  if (payload && payload.type === 'team.revoked') { leaveInviteWithReason(payload.reason || 'revoked', null); return; }
   try { mainWindow?.webContents.send('claude:event', payload); } catch {}
   // Quando o host muda modelo/settings de um projeto, atualiza a lista na UI
   if (payload && payload.type === 'project.updated') {
@@ -2800,7 +2843,7 @@ ipcMain.handle('claude:compactRestore', async (_e, { projectId }) => {
 });
 
 ipcMain.handle('projects:exportConfig', async (_e, id) => {
-  const project = projectStore.get(id);
+  const project = projectStore.get(id) || remoteClient.listProjects().find((p) => p.id === id);
   if (!project) throw new Error('Projeto não encontrado');
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Exportar config.json',
@@ -2866,8 +2909,8 @@ claudePty.onEvent((payload) => {
 // Estilo de resposta global (persona). Vale pra todos os projetos e sobrevive a
 // reset de sessão porque vive no system prompt, reinjetado a cada turno.
 const persona = require('./persona');
-ipcMain.handle('persona:get', async () => ({ style: persona.getStyle(), options: persona.listStyles() }));
-ipcMain.handle('persona:set', async (_e, style) => ({ style: persona.setStyle(style) }));
+ipcMain.handle('persona:get', async () => profilesCall('persona.get', {}, async () => ({ style: persona.getStyle(), options: persona.listStyles() })));
+ipcMain.handle('persona:set', async (_e, style) => profilesCall('persona.set', { style }, async () => ({ style: persona.setStyle(style) })));
 
 ipcMain.handle('queue:list', async (_e, projectId) => {
   if (remoteClient.isRemote(projectId)) return remoteClient.queueCall(projectId, 'queue.list');
@@ -2875,7 +2918,11 @@ ipcMain.handle('queue:list', async (_e, projectId) => {
 });
 ipcMain.handle('queue:enqueue', async (_e, { projectId, text, attachments }) => {
   if (remoteClient.isRemote(projectId)) return remoteClient.queueCall(projectId, 'queue.enqueue', { text, attachments });
-  return turnQueue.enqueue(projectId, { text, attachments });
+  // Mesma assinatura "Nome: " do envio direto (senão o mesmo autor aparecia
+  // com dois textos diferentes conforme entrou pela fila ou direto).
+  let qt = String(text || ''); const _n = userName();
+  if (_n && !qt.trimStart().startsWith('/')) qt = `${_n}: ${qt}`;
+  return turnQueue.enqueue(projectId, { text: qt, attachments, author: _n || undefined });
 });
 ipcMain.handle('queue:remove', async (_e, { projectId, itemId }) => {
   if (remoteClient.isRemote(projectId)) return remoteClient.queueCall(projectId, 'queue.remove', { itemId });
@@ -2924,7 +2971,12 @@ ipcMain.handle('claude:send', async (_e, { projectId, message }) => {
   let msg = String(message || '');
   const _n = userName();
   if (_n && !msg.trimStart().startsWith('/')) msg = `${_n}: ${msg}`;
-  return ptyFor(project).send(project, msg);
+  try { return await ptyFor(project).send(project, msg); }
+  catch (e) {
+    // Outro device/pessoa está no meio de um turno → fila do host (nunca derruba).
+    if (e && e.code === 'turn_in_progress') return { ok: true, queued: true, item: turnQueue.enqueue(projectId, { text: msg, author: _n || undefined }) };
+    throw e;
+  }
 });
 
 ipcMain.handle('claude:stop', async (_e, projectId) => {
@@ -2944,12 +2996,15 @@ runStore.setOnChange((run) => {
   try { mainWindow?.webContents.send('runs:changed', run); } catch {}
   try { remoteHost.broadcastEvent && remoteHost.broadcastEvent({ type: 'runs', run }); } catch {}
 });
-ipcMain.handle('runs:list', async (_e, projectId) => runStore.list(projectId));
-ipcMain.handle('runs:get', async (_e, runId) => runStore.get(runId));
-ipcMain.handle('runs:log', async (_e, runId) => runStore.readLog(runId));
-ipcMain.handle('runs:stop', async (_e, runId) => runStore.stop(runId));
-ipcMain.handle('runs:activeCount', async (_e, projectId) => runStore.activeCount(projectId));
+// Projeto remoto: as execuções vivem no HOST dele.
+const runsRpc = (projectId, ch, pl) => { const send = projectId ? fileRpcTarget(projectId) : null; return send ? send(ch, pl) : null; };
+ipcMain.handle('runs:list', async (_e, projectId) => (await runsRpc(projectId, 'runs.list', {})) ?? runStore.list(projectId));
+ipcMain.handle('runs:get', async (_e, runId, projectId) => (await runsRpc(projectId, 'runs.get', { runId })) ?? runStore.get(runId));
+ipcMain.handle('runs:log', async (_e, runId, projectId) => (await runsRpc(projectId, 'runs.log', { runId })) ?? runStore.readLog(runId));
+ipcMain.handle('runs:stop', async (_e, runId, projectId) => (await runsRpc(projectId, 'runs.stop', { runId })) ?? runStore.stop(runId));
+ipcMain.handle('runs:activeCount', async (_e, projectId) => (await runsRpc(projectId, 'runs.activeCount', {})) ?? runStore.activeCount(projectId));
 ipcMain.handle('runs:start', async (_e, { projectId, command, cwd, label }) => {
+  const r = await runsRpc(projectId, 'runs.start', { command, cwd, label }); if (r !== null) return r;
   try {
     const p = projectId ? projectStore.get(String(projectId).split('#')[0]) : null;
     return runStore.start({ projectId, command, cwd: cwd || (p && p.codeDir), label });
@@ -2964,16 +3019,16 @@ ipcMain.handle('claude:isBusy', async (_e, projectId) => {
   } catch { return { busy: false, known: false }; }
 });
 
-ipcMain.handle('claude:loadHistory', async (_e, projectId) => {
+ipcMain.handle('claude:loadHistory', async (_e, projectId, opts) => {
   if (remoteClient.isShared(projectId)) return remoteClient.loadHistoryShared(projectId);
   if (remoteClient.isRemote(projectId)) {
     const h = remoteHostOf(projectId);
     if (h) await ensureRemoteHost(h); // atacha/resume sob demanda (projeto cloud)
-    return remoteClient.loadHistory(projectId);
+    return remoteClient.loadHistory(projectId, opts || {});
   }
   const project = projectStore.get(projectId);
   if (!project) return [];
-  return ptyFor(project).loadHistory(project);
+  return ptyFor(project).loadHistory(project, opts || {});
 });
 
 ipcMain.handle('claude:usage', async (_e, { scope, projectId, profileId } = {}) => {
@@ -3069,19 +3124,23 @@ ipcMain.handle('mcp:get', async (_e, name) => mcp.get(name));
 ipcMain.handle('mcp:add', async (_e, input) => mcp.add(input));
 ipcMain.handle('mcp:remove', async (_e, { name, scope }) => mcp.remove(name, scope));
 
+// CLAUDE.md de projeto REMOTO vive no host (é lá que o CLI lê): roteia.
 ipcMain.handle('claudeMd:read', async (_e, projectId) => {
+  const send = fileRpcTarget(projectId); if (send) return send('claudeMd.read', {});
   const project = projectStore.get(projectId);
   if (!project) throw new Error('Projeto não encontrado');
   return claudeMd.read(project);
 });
 
 ipcMain.handle('claudeMd:write', async (_e, { projectId, content }) => {
+  const send = fileRpcTarget(projectId); if (send) return send('claudeMd.write', { content });
   const project = projectStore.get(projectId);
   if (!project) throw new Error('Projeto não encontrado');
   return claudeMd.write(project, content);
 });
 
 ipcMain.handle('claudeMd:ensure', async (_e, projectId) => {
+  const send = fileRpcTarget(projectId); if (send) return send('claudeMd.ensure', {});
   const project = projectStore.get(projectId);
   if (!project) throw new Error('Projeto não encontrado');
   return claudeMd.ensure(project);

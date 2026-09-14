@@ -238,7 +238,7 @@ contextBridge.exposeInMainWorld('maestrus', {
     queueRemove: (projectId, itemId) => ipcRenderer.invoke('queue:remove', { projectId, itemId }),
     queueReorder: (projectId, ids) => ipcRenderer.invoke('queue:reorder', { projectId, ids }),
     queueClear: (projectId) => ipcRenderer.invoke('queue:clear', projectId),
-    loadHistory: (projectId) => ipcRenderer.invoke('claude:loadHistory', projectId),
+    loadHistory: (projectId, opts) => ipcRenderer.invoke('claude:loadHistory', projectId, opts),
     isBusy: (projectId) => ipcRenderer.invoke('claude:isBusy', projectId),
     usage: (opts) => ipcRenderer.invoke('claude:usage', opts || {}),
     version: () => ipcRenderer.invoke('claude:version'),
@@ -261,9 +261,9 @@ contextBridge.exposeInMainWorld('maestrus', {
   // Execuções em segundo plano: vivem no host e sobrevivem ao fim do turno.
   runs: {
     list: (projectId) => ipcRenderer.invoke('runs:list', projectId),
-    get: (runId) => ipcRenderer.invoke('runs:get', runId),
-    log: (runId) => ipcRenderer.invoke('runs:log', runId),
-    stop: (runId) => ipcRenderer.invoke('runs:stop', runId),
+    get: (runId, projectId) => ipcRenderer.invoke('runs:get', runId, projectId),
+    log: (runId, projectId) => ipcRenderer.invoke('runs:log', runId, projectId),
+    stop: (runId, projectId) => ipcRenderer.invoke('runs:stop', runId, projectId),
     start: (opts) => ipcRenderer.invoke('runs:start', opts),
     activeCount: (projectId) => ipcRenderer.invoke('runs:activeCount', projectId),
     onChange: (handler) => {
@@ -367,6 +367,16 @@ contextBridge.exposeInMainWorld('maestrus', {
       ipcRenderer.on('invite:joined', h);
       return () => ipcRenderer.removeListener('invite:joined', h);
     },
+    // Acesso encerrado pelo dono (revogado/expirado): a UI avisa em vez de os
+    // projetos só sumirem.
+    onLeft: (fn) => {
+      const h = (_e, r) => fn(r);
+      ipcRenderer.on('invite:left', h);
+      return () => ipcRenderer.removeListener('invite:left', h);
+    },
+    shareStatus: () => ipcRenderer.invoke('invite:shareStatus'),
+    sharedWithMe: () => ipcRenderer.invoke('invite:sharedWithMe'),
+    joinShare: (id) => ipcRenderer.invoke('invite:joinShare', id),
   },
   models: {
     discovered: () => ipcRenderer.invoke('models:discovered'),

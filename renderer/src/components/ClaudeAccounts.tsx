@@ -67,6 +67,7 @@ export default function ClaudeAccounts({ scope = 'local', withUsage = false, bar
     try {
       const r = await api.setActive(id);
       if (r?.ok) setActive(id);
+      else if (r?.error === 'team_bound') window.alert(t('accounts.teamBoundMsg'));
     } finally { setSwitching(null); }
   }
 

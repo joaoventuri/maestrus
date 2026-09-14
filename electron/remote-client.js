@@ -270,6 +270,8 @@ function setAuthorName(n) { _authorName = String(n || '').trim().slice(0, 40); }
 let _teamHelloFn = null;               // () => payload | null
 const _teamSids = new Map();           // hostId → sid
 function setTeamHello(fn) { _teamHelloFn = fn; _teamSids.clear(); }
+let _onTeamRevoked = null;   // main: acesso revogado/expirado/inválido → sai da sala e avisa a UI
+function setOnTeamRevoked(fn) { _onTeamRevoked = fn; }
 async function ensureHello(hostId) {
   if (!_teamHelloFn || _teamSids.has(hostId) || !link) return;
   let payload = null;
@@ -278,6 +280,9 @@ async function ensureHello(hostId) {
   try {
     const r = await link.rpc(hostId, 'team.hello', payload, 8000);
     if (r && r.ok && r.sid) _teamSids.set(hostId, r.sid);
+    else if (r && r.ok === false && ['revoked', 'expired', 'invalid'].includes(String(r.error))) {
+      try { _onTeamRevoked && _onTeamRevoked(hostId, String(r.error)); } catch {}
+    }
   } catch { /* host antigo sem team.hello → segue sem sid */ }
 }
 // Choke-point de RPC pro host: injeta o __sid e, se o host disser que exige
@@ -310,9 +315,9 @@ async function send(remoteId, message) {
   const r = parse(remoteId); if (!r || !link) throw new Error('Sem conexão remota');
   return hrpc(r.hostId, 'claude.send', { projectId: r.projectId, message, author: _authorName || undefined }, 120000);
 }
-async function loadHistory(remoteId) {
+async function loadHistory(remoteId, opts = {}) {
   const r = parse(remoteId); if (!r || !link) return [];
-  return hrpc(r.hostId, 'claude.loadHistory', { projectId: r.projectId }, 15000).catch(() => []);
+  return hrpc(r.hostId, 'claude.loadHistory', { projectId: r.projectId, limit: opts && opts.limit ? Number(opts.limit) : undefined }, 20000).catch(() => []);
 }
 // Watchdog: o turno ainda está rodando NO HOST? Usado pra destravar o "pensando".
 async function statusOf(remoteId) {
@@ -360,7 +365,7 @@ async function dispatchOneShot(remoteId, message, { timeoutMs = 300000 } = {}) {
 async function patchProject(id, patch) {
   const r = parse(id); if (!r || !link) return null;
   const allowed = {};
-  for (const k of ['model', 'thinkingMode', 'permissionMode', 'engine', 'voiceMode']) {
+  for (const k of ['model', 'thinkingMode', 'permissionMode', 'engine', 'voiceMode', 'name']) {
     if (patch[k] !== undefined) allowed[k] = patch[k];
   }
   if (!Object.keys(allowed).length) return null;
@@ -570,7 +575,7 @@ async function stopShared(id) { return sharedRpc(id, 'claude.stop', {}, 8000).ca
 
 module.exports = {
   setAuthorName,
-  setTeamHello,
+  setTeamHello, setOnTeamRevoked,
   teamCreateScoped, teamGrants, teamRevokeGrant, hrpcTeamAiAdmin,
   start, startDiscovery, refreshProjects, listProjects, send, loadHistory, statusOf, statusShared, stopProject, dispatchOneShot, patchProject, createOnHost, uploadSessionToHost, deleteOnHost, isHostConnected, setSelfHostId,
   startShared, listSharedProjects, disconnectShared, sharedRpc, sendShared, loadHistoryShared, stopShared,

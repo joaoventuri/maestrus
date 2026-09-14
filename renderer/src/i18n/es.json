@@ -16,7 +16,8 @@
     "edit": "Editar",
     "delete": "Borrar",
     "close": "Cerrar",
-    "loading": "Cargando..."
+    "loading": "Cargando...",
+    "ok": "OK"
   },
   "boot": {
     "loading": "iniciando…"
@@ -85,7 +86,8 @@
     "loadOlder": "Cargar {n} mensajes anteriores",
     "attachTooBig": "Archivo demasiado grande (máx. 20 MB).",
     "attachFail": "Error al subir el adjunto",
-    "toolsRan": "herramientas"
+    "toolsRan": "herramientas",
+    "loadOlderHost": "Cargar mensajes anteriores del host"
   },
   "settings": {
     "title": "Ajustes",
@@ -991,7 +993,8 @@
     "active": "en uso",
     "hostOffline": "Host sin conexión",
     "teamBound": "Cuenta del equipo — reservada a los accesos compartidos",
-    "teamShort": "equipo"
+    "teamShort": "equipo",
+    "teamBoundMsg": "Esta cuenta está reservada a un acceso compartido. Quítala del acceso en Acceso Remoto para volver a usarla."
   },
   "runs": {
     "title": "Segundo plano",
@@ -1048,7 +1051,7 @@
     "shareOneHost": "Elige conversaciones de UNA sola máquina por enlace (una invitación pertenece a una sala).",
     "shareNoRoom": "El host de esas conversaciones aún no tiene sala de invitación — genera una invitación allí primero.",
     "emailLabel": "O envía a un e-mail de Maestrus (opcional)",
-    "emailSent": "Enviado a {email} — las conversaciones aparecerán cuando inicie sesión.",
+    "emailSent": "Acceso liberado para {email} — aparece cuando esa persona abra Maestrus con ese e-mail (no enviamos e-mail).",
     "emailNotFound": "Ese e-mail no tiene cuenta en maestrus.cloud — usa el enlace.",
     "emailFailed": "No pude registrar el envío — usa el enlace.",
     "aiTitle": "Cuenta de Claude",
@@ -1071,7 +1074,22 @@
     "aiPoolShort": "{n} cuentas",
     "shareMain": "Conversación principal",
     "sharePartial": "parcial",
-    "sharePickHint": "Marca el proyecto entero (los forks futuros entran) o ábrelo y elige conversación por conversación — lo que quede fuera no existe para el invitado."
+    "sharePickHint": "Marca el proyecto entero (los forks futuros entran) o ábrelo y elige conversación por conversación — lo que quede fuera no existe para el invitado.",
+    "leftTitle": "Acceso finalizado",
+    "leftRevoked": "El dueño finalizó tu acceso a estas conversaciones. Pide una nueva invitación si la necesitas.",
+    "leftExpired": "Tu acceso a estas conversaciones venció. Pide al dueño una nueva invitación.",
+    "hostOff": "El Host está apagado — los accesos compartidos solo funcionan con él encendido.",
+    "expires": "vence {date}",
+    "delivered": "entró",
+    "notOpened": "aún no abrió",
+    "online": "en línea ahora",
+    "sharedWithMe": "Accesos compartidos conmigo",
+    "sharedWithMeSub": "Conversaciones que otras personas liberaron para tu e-mail. Un acceso a la vez.",
+    "enter": "Entrar",
+    "current": "actual",
+    "askNameTitle": "¿Cómo quieres aparecer para el equipo?",
+    "askNameHint": "Tu nombre firma lo que escribes y aparece para quien está en la sala.",
+    "leftBanner": "El dueño finalizó tu acceso a {host}."
   },
   "llm": {
     "title": "Cuentas LLM",

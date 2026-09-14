@@ -14,6 +14,8 @@ interface Props {
   streaming: boolean;
   onOpenLink?: (url: string) => void;
   onSend?: (text: string) => void;
+  // Quando a janela local já mostra tudo que veio do host, busca mais no host.
+  onLoadOlder?: () => Promise<boolean>;
 }
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -117,7 +119,8 @@ function OrchestrationCard({ result, input }: { result: ChatMessage; input: any 
   );
 }
 
-export default function MessageList({ messages, streaming, onOpenLink, onSend }: Props) {
+export default function MessageList({ messages, streaming, onOpenLink, onSend, onLoadOlder }: Props) {
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const { t } = useT();
   const endRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -218,11 +221,15 @@ export default function MessageList({ messages, streaming, onOpenLink, onSend }:
 
   return (
     <div className="messages transcript" ref={scrollerRef} onClickCapture={onClickCapture} onScroll={onScroll}>
-      {visible.hiddenAtStart > 0 && (
+      {visible.hiddenAtStart > 0 ? (
         <button className="load-more" onClick={() => setWindowSize((w) => w + PAGE)}>
           {t('chat.loadOlder', { n: Math.min(PAGE, visible.hiddenAtStart) })}
         </button>
-      )}
+      ) : (onLoadOlder && messages.length >= 100) ? (
+        <button className="load-more" disabled={loadingOlder} onClick={async () => { setLoadingOlder(true); try { const more = await onLoadOlder(); if (more) setWindowSize((w) => w + PAGE); } finally { setLoadingOlder(false); } }}>
+          {loadingOlder ? '…' : t('chat.loadOlderHost')}
+        </button>
+      ) : null}
       {turns.map((turn, ti) => {
         // Turno só com divisor de compactação → linha full-width, sem card.
         if (!turn.user && turn.blocks.length === 1 && turn.blocks[0].kind === 'compact') {

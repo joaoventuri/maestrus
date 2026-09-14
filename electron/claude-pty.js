@@ -601,11 +601,12 @@ function buildEnv(project, profileId) {
 
 async function send(project, message, opts = {}) {
   if (procs.has(project.id)) {
-    // Mata o processo travado antes de aceitar nova mensagem (evita órfãos)
-    const old = procs.get(project.id);
-    try { old.kill('SIGKILL'); } catch {}
-    procs.delete(project.id);
-    console.warn(`[maestrus] mataram proc órfão pra projeto ${project.id}`);
+    // UM turno por conversa. Antes matava o processo em andamento e subia
+    // outro — com duas pessoas (ou dois devices) na mesma conversa, o turno
+    // do colega morria no meio e o `close` do processo morto emitia um `done`
+    // falso que derrubava o "pensando" de todo mundo e drenava a fila. Agora
+    // quem chega com turno vivo é ENFILEIRADO pelo chamador (turn_in_progress).
+    const err = new Error('turn_in_progress'); err.code = 'turn_in_progress'; throw err;
   }
 
   if (!project.codeDir || !fs.existsSync(project.codeDir)) {
@@ -1056,7 +1057,7 @@ function sessionMeta(project) {
   } catch { return null; }
 }
 
-function loadHistory(project) {
+function loadHistory(project, opts = {}) {
   const jsonlPath = findSessionFile(project);
   if (!jsonlPath) return [];
 
@@ -1070,7 +1071,9 @@ function loadHistory(project) {
 
   // Cauda: 800 linhas cobre com folga o TAIL=400 mensagens do host+client
   // (cada mensagem pode virar 2+ entradas do .jsonl: user + assistant + tool_use…).
-  const lines = readTailLines(jsonlPath, 800);
+  // Paginação: o host pede uma cauda maior quando o client clica "carregar
+  // anteriores" (antes o remoto travava nas últimas 150 msgs).
+  const lines = readTailLines(jsonlPath, Math.max(800, Number(opts.maxLines) || 0));
 
   // Sessão do Claude Code é uma ÁRVORE (cada entry tem uuid + parentUuid). Um
   // turno interrompido (fechar/reabrir o app, "session limit", kill) cria um

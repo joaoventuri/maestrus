@@ -25,7 +25,8 @@ export default function LLMAccountsScreen({ onOpenSharing }: { onOpenSharing?: (
       for (const p of ps || []) { m[p.id] = p.name; const short = String(p.id).split(':').pop(); if (short) m[short] = p.name; }
       setProjNames(m);
     }).catch(() => {});
-    inviteApi?.grants?.().then(async (r: any) => {
+    if (!inviteApi?.grants) { setGrants([]); return; }
+    inviteApi.grants().then(async (r: any) => {
       const gs = r?.grants || [];
       setGrants(gs);
       // e-mail da conta de cada acesso (best-effort, em paralelo)

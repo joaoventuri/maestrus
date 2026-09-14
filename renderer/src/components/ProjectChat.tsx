@@ -147,6 +147,17 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
   // A fila mora no HOST. Aqui só guardamos o espelho pra desenhar.
   const [queued, setQueued] = useState<Array<{ id: string; text: string }>>([]);
 
+  // Histórico remoto vem em páginas (o host manda só a cauda). Pede uma cauda
+  // maior; se não cresceu, não há mais nada antes.
+  const [serverMore, setServerMore] = useState(true);
+  useEffect(() => { setServerMore(true); }, [project.id]);
+  async function loadOlderFromHost(): Promise<boolean> {
+    try {
+      const h = await window.maestrus.claude.loadHistory(project.id, { limit: messages.length + 200 });
+      if (Array.isArray(h) && h.length > messages.length) { histCache.set(project.id, h); setMessages(h); return true; }
+      setServerMore(false); return false;
+    } catch { setServerMore(false); return false; }
+  }
   function enqueueOnHost(text: string, attachments?: Attachment[]) {
     try { (window as any).maestrus?.claude?.queueAdd?.(project.id, text, attachments); } catch {}
   }
@@ -180,6 +191,8 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
   const streamingRef = useRef<{ buffer: string }>({ buffer: '' });
   // Texto do user adicionado otimista (cloud/remote) p/ dedupe do echo do runner.
   const pendingUserRef = useRef<string | null>(null);
+  // Mensagens minhas ainda sem eco do host: { text (o que foi enviado), shown (o que está no balão) }.
+  const inflightRef = useRef<Array<{ text: string; shown: string; at: number }>>([]);
   // Marca que o usuário já interagiu → impede o loadHistory do open (que espera
   // o resume do cloud) de sobrescrever o chat em andamento.
   const interactedRef = useRef(false);
@@ -536,6 +549,9 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
     // hora — sem isso, abria parado e só "acordava" no próximo delta. Marca lido.
     const act = getActivity()[project.id];
     if (act && act.status === 'working') setBusy(true);
+    // Abriu no meio de um turno disparado por outro device/pessoa: o store
+    // local não sabe — o host sabe.
+    (async () => { try { const b: any = await window.maestrus.claude.isBusy(project.id); if (b && (b === true || b.busy === true)) { setBusy(true); busyRef.current = true; } } catch {} })();
     markRead(project.id);
     // 1) Mostra o cache NA HORA (reabrir é instantâneo). 2) Busca o fresco e
     // atualiza. Se não tem cache, mostra "carregando" natural até chegar.
@@ -579,31 +595,44 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
       lastEventRef.current = Date.now();
 
       if (evt.type === 'user') {
-        // dedupe: se acabamos de adicionar essa mesma msg otimisticamente
-        // (cloud/remote), não duplica o balão.
-        // O eco pode voltar PREFIXADO ("Joao: texto") — o host assina a
-        // mensagem do time. Comparar por igualdade exata deixava DOIS balões:
-        // o otimista (cru) e o eco (assinado).
-        if (pendingUserRef.current && (evt.text === pendingUserRef.current || (evt.text || '').endsWith(': ' + pendingUserRef.current))) {
-          // Se o eco veio assinado, atualiza o balão otimista pra versão
-          // assinada — um balão só, com autor.
-          if (evt.text !== pendingUserRef.current) {
-            const signed = evt.text;
-            setMessages((m) => {
-              for (let i = m.length - 1; i >= 0; i--) {
-                if (m[i].role === 'user' && m[i].text === pendingUserRef.current) {
-                  const next = [...m]; next[i] = { ...next[i], text: signed }; return next;
-                }
+        // Um turno começou nesta conversa (por mim, por outro device meu ou por
+        // um colega): a conversa está ocupada pra TODOS — senão o segundo device
+        // mandava direto e derrubava o turno em vez de enfileirar.
+        if (!busyRef.current) { setBusy(true); busyRef.current = true; }
+        // Dedupe do eco: o host devolve a mensagem (possivelmente assinada
+        // "Nome: texto" e/ou com anexos formatados). Casa com QUALQUER balão
+        // otimista ainda em voo — o meu direto, ou um da fila que acabou de ser
+        // despachado — e atualiza o balão no lugar em vez de duplicar.
+        const echo = String(evt.text || '');
+        const stripped = echo.replace(/^[^\n:]{1,40}: /, '');
+        const matches = (t: string) => !!t && (echo === t || stripped === t || echo.endsWith(': ' + t) || t.endsWith(stripped) || stripped.endsWith(t));
+        const hit = inflightRef.current.find((f) => matches(f.text));
+        if (hit) {
+          inflightRef.current = inflightRef.current.filter((f) => f !== hit);
+          setMessages((m) => {
+            for (let i = m.length - 1; i >= 0; i--) {
+              if (m[i].role === 'user' && (m[i].text === hit.shown || m[i].text === hit.text) && (m[i].queued || !m[i].timestamp || Date.now() - (m[i].timestamp || 0) < 10 * 60 * 1000)) {
+                const next = [...m]; next[i] = { ...next[i], text: echo, queued: false }; return next;
               }
-              return m;
-            });
-          }
-          pendingUserRef.current = null;
+            }
+            return m;
+          });
           return;
         }
-        setMessages((m) => [...m, { role: 'user', text: evt.text, timestamp: evt.timestamp }]);
+        // Eco de um item da fila (meu ou de outro device) que já está na tela como "queued"
+        let reconciled = false;
+        setMessages((m) => {
+          for (let i = m.length - 1; i >= 0; i--) {
+            if (m[i].role === 'user' && m[i].queued && matches(String(m[i].text || ''))) { const next = [...m]; next[i] = { ...next[i], text: echo, queued: false }; reconciled = true; return next; }
+          }
+          return [...m, { role: 'user', text: echo, timestamp: evt.timestamp }];
+        });
+        void reconciled;
         return;
       }
+      // Qualquer sinal de trabalho vindo do host = ocupado (também quando quem
+      // disparou foi outro device).
+      if ((evt.type === 'thinking' || evt.type === 'delta' || evt.type === 'tool-use' || evt.type === 'assistant-text') && !busyRef.current) { setBusy(true); busyRef.current = true; }
       if (evt.type === 'delta' && evt.text) {
         // realtimeRef: a fala é do Realtime, então nem acumulamos texto pro TTS.
         if (vmodeRef.current && !realtimeRef.current) {
@@ -909,6 +938,7 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
       // ref local: sobrevive a trocar de conversa, fechar o app e reiniciar, e
       // aparece igual nos outros dispositivos.
       enqueueOnHost(trimmed, attachments);
+      inflightRef.current = [...inflightRef.current, { text: trimmed, shown: trimmed, at: Date.now() }];
       setMessages((m) => [...m, { role: 'user', text: trimmed, queued: true, ...audio, timestamp: Date.now() }]);
       return;
     }
@@ -970,6 +1000,7 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
     setMessages((m) => [...m, { role: 'user', text: trimmed, ...audio, timestamp: Date.now() }]);
     const finalText = formatWithAttachments(trimmed, await resolveAttachments(attachments));
     pendingUserRef.current = finalText;
+    inflightRef.current = [...inflightRef.current.filter((f) => Date.now() - f.at < 10 * 60 * 1000), { text: finalText, shown: trimmed, at: Date.now() }];
     setBusy(true);
     streamingRef.current = { buffer: '' };
     try {
@@ -1004,11 +1035,9 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
     setBusy(false);
     busyRef.current = false;
     setRecentTools([]);
-    // Sem isso o turno "parado" ressuscita: o done do processo morto drena a
-    // fila e dispara o próximo prompt sozinho.
-    try { (window as any).maestrus?.claude?.queueClear?.(project.id); } catch {}
-    setQueued([]);
-    setMessages((m) => m.map((msg) => (msg.pending || msg.queued ? { ...msg, pending: false, queued: false } : msg)));
+    // A fila é do HOST e de todos os devices — parar o MEU turno não apaga o
+    // que um colega enfileirou. (O `done` cancelado não drena a fila.)
+    setMessages((m) => m.map((msg) => (msg.pending ? { ...msg, pending: false } : msg)));
     try { await window.maestrus.claude.stop(project.id); }
     catch (e) { console.warn('[maestrus] stop falhou:', e); }
     finally { setStopping(false); }
@@ -1130,7 +1159,8 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
       {/* O painel divide o espaço com a conversa em vez de flutuar por cima —
           dá para ler a saída de um processo e a resposta ao mesmo tempo. */}
       <div className={`chat-body ${runsOpen ? 'with-runs' : ''}`}>
-        <MessageList messages={messages} streaming={busy} onOpenLink={onOpenLink} onSend={(txt) => send(txt)} />
+        <MessageList messages={messages} streaming={busy} onOpenLink={onOpenLink} onSend={(txt) => send(txt)}
+          onLoadOlder={(project.remoteHostId || (window as any).maestrus?.isWeb) && !busy && serverMore ? loadOlderFromHost : undefined} />
         {runsOpen && <RunsPanel projectId={project.id} onClose={() => setRunsOpen(false)} />}
       </div>
 

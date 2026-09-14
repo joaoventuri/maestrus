@@ -1,3 +1,4 @@
+import { staleWorking, reconcile } from '../lib/activity-store';
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { marked } from 'marked';
 import { Share, X, QrCode, User, ExternalLink, LogOut, Sparkles, Mic, AudioLines, ChevronLeft, ChevronRight, ChevronDown, MessageSquare, GitBranch, Settings, ArrowUp, Kanban as KanbanIcon, CloudCog, Check, Cpu, Brain, ShieldOff, ShieldCheck, ShieldAlert, Shield, Square, KeyRound, ArrowRight, Trash2, AlertCircle, Bell, RefreshCw, Server, Copy, Power, HardDrive, Paperclip, Camera } from 'lucide-react';
@@ -180,8 +181,34 @@ export default function MobileApp() {
     return () => clearTimeout(id);
   }, [reconnectingNow]);
 
+  // Acesso encerrado (revogado/vencido/sala girada): tela explícita, não
+  // "Conectado" com zero projetos. Um toque volta pra conta/conexão.
+  const [leftReason, setLeftReason] = useState<string | null>(null);
+  useEffect(() => {
+    if (client.status !== 'revoked') return;
+    (M() as any).invite?.leftReason?.().then((r: any) => setLeftReason(r?.reason || 'revoked')).catch(() => setLeftReason('revoked'));
+    everConnectedRef.current = false; setActive(null); setProjects([]); setInviteJoined(false); setGuest(false);
+  }, [client.status]);
+  // Bolinhas "trabalhando" presas (done perdido enquanto o celular dormia):
+  // pergunta ao host quem AINDA roda e corrige — mesmo efeito do desktop.
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => { for (const id of staleWorking(15000)) { try { const r: any = await (M() as any).claude?.isBusy?.(id); if (alive && r && r.known) reconcile(id, !!r.busy); } catch {} } };
+    const iv = setInterval(tick, 8000);
+    const onVis = () => { if (!document.hidden) tick(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { alive = false; clearInterval(iv); document.removeEventListener('visibilitychange', onVis); };
+  }, []);
   let screen;
-  if (!booted || hashJoin === 'joining') screen = <div className="m-center"><div className="m-spin" /></div>;
+  if (leftReason) screen = (
+    <div className="m-screen m-auth">
+      <Logo size={56} textSize={40} />
+      <p className="m-sub"><strong>{t('team.leftTitle')}</strong></p>
+      <p className="m-hint" style={{ textAlign: 'center', maxWidth: 320 }}>{leftReason === 'expired' ? t('team.leftExpired') : t('team.leftRevoked')}</p>
+      <button className="m-codex-connect" onClick={() => { setLeftReason(null); setClient({ connected: false, status: 'idle', hostName: null }); if (account) M().remote.ensureConnected?.().catch(() => {}); }}>{t('common.ok') || 'OK'}</button>
+    </div>
+  );
+  else if (!booted || hashJoin === 'joining') screen = <div className="m-center"><div className="m-spin" /></div>;
   else if (!account && !inviteJoined && !wantInvite && !client.connected) screen = <Login t={t} onDone={setAccount} onInvite={() => setWantInvite(true)} />;
   else if (!client.connected && !everConnectedRef.current && attempting) screen = <div className="m-center"><div className="m-spin" /></div>;
   else if (!client.connected && !everConnectedRef.current) screen = <Connect t={t} onAccount={() => setShowAccount(true)} onLogout={logout} />;
@@ -189,7 +216,7 @@ export default function MobileApp() {
   else if (active) screen = <Chat t={t} project={active} onBack={() => setActive(null)}
     connected={client.connected} guest={guest}
     onPatch={(patch: any) => { setActive((p: any) => ({ ...p, ...patch })); setProjects((ps) => ps.map((p) => p.id === active.id ? { ...p, ...patch } : p)); }} />;
-  else screen = <Projects t={t} projects={projects} host={client.hostName} onPick={setActive} onAccount={() => setShowAccount(true)}
+  else screen = <Projects t={t} projects={projects} host={client.hostName} onPick={setActive} onAccount={() => setShowAccount(true)} guest={guest}
     onKanban={() => setShowKanban(true)}
     onRefresh={() => M().remote.refreshProjects().then(setProjects)}
     onDisconnect={disconnect} />;
@@ -464,7 +491,8 @@ function Connect({ t, onAccount, onLogout }: any) {
     } catch { setManual(true); }
     finally { setDiscovering(false); }
   }
-  useEffect(() => { discover(); M().cloud.cloudList?.().then((r: any) => { if (r && r.ok) setCloud(r.sessions || []); }).catch(() => {}); }, []);
+  const [shares, setShares] = useState<any[]>([]);
+  useEffect(() => { discover(); M().cloud.cloudList?.().then((r: any) => { if (r && r.ok) setCloud(r.sessions || []); }).catch(() => {}); (M() as any).invite?.sharedWithMe?.().then((r: any) => setShares(r?.shares || [])).catch(() => {}); }, []);
 
   async function openCloud(s: any) {
     setCloudBusy(s.project_id); setErr('');
@@ -527,6 +555,16 @@ function Connect({ t, onAccount, onLogout }: any) {
         <RefreshCw size={17} /> {discovering ? t('mobile.searchingMachines') : t('mobile.searchAgain')}
       </button>
 
+      {shares.length > 1 && (
+        <div className="m-form" style={{ marginBottom: 8 }}>
+          <label className="m-label">{t('team.sharedWithMe')}</label>
+          {shares.map((sh: any) => (
+            <button key={sh.id} type="button" className="m-codex-connect" style={{ marginTop: 6 }} onClick={async () => { setBusy(true); const r = await (M() as any).invite?.joinShare?.(sh.id).catch(() => null); setBusy(false); if (!r?.ok) setErr(t('mobile.badCode')); }}>
+              {sh.owner_name || sh.owner_email} · {sh.host_name || ''}
+            </button>
+          ))}
+        </div>
+      )}
       {/* QR / código como ALTERNATIVA */}
       <form className="m-form" onSubmit={(e) => { e.preventDefault(); go(); }}>
         {err && <div className="m-err">{err}</div>}
@@ -542,7 +580,11 @@ function Connect({ t, onAccount, onLogout }: any) {
   );
 }
 
-function Projects({ t, projects, host, onPick, onRefresh, onDisconnect, onAccount, onKanban }: any) {
+function Projects({ t, projects, host, onPick, onRefresh, onDisconnect, onAccount, onKanban, guest }: any) {
+  // Convidado sem nome: a presença mostrava "4f2a1b" e as mensagens saíam sem
+  // autor. Pede uma vez, aqui mesmo, e reapresenta ao host.
+  const [askName, setAskName] = useState(false); const [nameDraft, setNameDraft] = useState('');
+  useEffect(() => { if (!guest) return; (M() as any).team?.getName?.().then((r: any) => { if (!r?.name) setAskName(true); }).catch(() => {}); }, [guest]);
   const maestrus = projects.find((p: any) => p.remoteProjectId === 'maestrus' || p.name === 'Maestrus');
   const others = projects.filter((p: any) => p !== maestrus && p.id !== 'starter');
   const activity = useActivityMap();
@@ -582,6 +624,14 @@ function Projects({ t, projects, host, onPick, onRefresh, onDisconnect, onAccoun
         <button className="m-link" onClick={onDisconnect}>{t('mobile.disconnect')}</button>
       </header>
       <div className="m-subbar">{t('mobile.connectedTo')} <b>{host}</b></div>
+      {askName && (
+        <form className="m-form" style={{ padding: '10px 14px' }} onSubmit={async (e) => { e.preventDefault(); const n = nameDraft.trim(); if (!n) return; await (M() as any).team?.setName?.(n).catch(() => {}); setAskName(false); try { await M().remote.resume?.(); } catch {} }}>
+          <label className="m-label">{t('team.askNameTitle')}</label>
+          <input className="m-name" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder={t('team.yourName')} maxLength={40} autoFocus />
+          <p className="m-hint">{t('team.askNameHint')}</p>
+          <button disabled={!nameDraft.trim()}>{t('common.ok') || 'OK'}</button>
+        </form>
+      )}
       <div className="m-list">
         {/* Maestrus — sessão principal, sempre no topo, destaque neon */}
         {maestrus && (
@@ -674,6 +724,9 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
   const [oaiErr, setOaiErr] = useState('');
   const [showOaiUpsell, setShowOaiUpsell] = useState(false);
   const [windowSize, setWindowSize] = useState(200);
+  const [serverMore, setServerMore] = useState(true);   // o host ainda tem histórico antes do que veio
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  useEffect(() => { setServerMore(true); }, [project.id]);
   const endRef = useRef<HTMLDivElement>(null);
 
   // ── Modo Voz (Jarvis): full-screen com maestro, música e tools. STT → envia
@@ -685,6 +738,9 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
   const [recentTools, setRecentTools] = useState<{ id: string; name: string; ts: number }[]>([]);
   const vmodeRef = useRef(false); const busyRef = useRef(false); const speakingRef = useRef(false); const lastEventRef = useRef(0);
   const msgQueueRef = useRef<string[]>([]);
+  const inflightRef = useRef<string[]>([]);        // minhas mensagens sem eco ainda
+  const interactedRef = useRef(false);             // mexi na conversa → loadHistory tardio não sobrescreve
+  const [queued, setQueued] = useState<any[]>([]); // fila do HOST (evento 'queue')
   const stt = useRef(getSttEngine());
   const ttsQueueRef = useRef<string[]>([]);
   const ttsPlayingRef = useRef(false);
@@ -708,8 +764,10 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
         setBusy(false); busyRef.current = false;
         if (vmodeRef.current) { resetTtsState(); speakingRef.current = false; setVstate('idle'); setTimeout(startListening, 400); }
       }
-      // Recarrega o histórico ao voltar — restaura mensagens perdidas no background.
-      try { const h = await M().claude.loadHistory(project.id); if (Array.isArray(h) && h.length) { mHistCache.set(project.id, h); setMsgs(h); } } catch {}
+      // Recarrega o histórico ao voltar — restaura mensagens perdidas no
+      // background. NUNCA no meio de um turno: o .jsonl ainda não tem a
+      // pergunta em curso e o reload apagava a mensagem e o texto em streaming.
+      if (!busyRef.current) { try { const h = await M().claude.loadHistory(project.id); if (Array.isArray(h) && h.length) { mHistCache.set(project.id, h); setMsgs(h); } } catch {} }
     } catch {}
   }
   useEffect(() => {
@@ -725,11 +783,16 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
   const prevConnectedRef = useRef<boolean>(!!connected);
   useEffect(() => {
     if (!prevConnectedRef.current && connected && busyRef.current) {
-      setBusy(false); busyRef.current = false;
-      resetTtsState(); speakingRef.current = false; setVstate('idle'); setVcaption('');
-      M().claude.loadHistory(project.id)
-        .then((history: any[]) => { if (history?.length) setMsgs(history); })
-        .catch(() => {});
+      // Reconectou no meio de um turno: pergunta ao host se ainda roda antes de
+      // destravar/recarregar (o done pode ter se perdido — ou não).
+      (async () => {
+        let stillBusy = false;
+        try { const r: any = await (M() as any)?.claude?.isBusy?.(project.id); stillBusy = !!(r && r.known && r.busy); } catch {}
+        if (stillBusy) return;
+        setBusy(false); busyRef.current = false;
+        resetTtsState(); speakingRef.current = false; setVstate('idle'); setVcaption('');
+        M().claude.loadHistory(project.id).then((history: any[]) => { if (history?.length) setMsgs(history); }).catch(() => {});
+      })();
     }
     prevConnectedRef.current = !!connected;
   }, [connected]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -857,6 +920,7 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
     { const c = mHistCache.get(project.id); if (c) setMsgs(c); }  // cache: mostra na hora
     M().claude.loadHistory(project.id).then((h: any[]) => {
       if (!mounted) return;
+      if (interactedRef.current || busyRef.current) return;   // já mexi / turno vivo: não sobrescreve
       if (Array.isArray(h) && h.length) { mHistCache.set(project.id, h); setMsgs(h); setHistErr(''); }
       else if (!mHistCache.get(project.id)) {
         setMsgs(Array.isArray(h) ? h : []); // vazio de verdade…
@@ -865,10 +929,34 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
         if (err) { setHistErr(String(err)); (window as any).__maestrusLastHistError = null; }
       }
     });
+    interactedRef.current = false; inflightRef.current = [];
+    (async () => {
+      try { const r: any = await (M() as any)?.claude?.isBusy?.(project.id); if (r && r.known && r.busy) { setBusy(true); busyRef.current = true; } } catch {}
+      try { const q = await (M().claude as any).queueList?.(project.id); if (Array.isArray(q)) setQueued(q); } catch {}
+    })();
     const off = M().claude.onEvent((e: any) => {
       if (e.projectId && e.projectId !== project.id) return;
       lastEventRef.current = Date.now();
-      if (e.type === 'user') return;
+      if (e.type === 'user') {
+        // Mensagem de OUTRO device/pessoa (ou o eco assinada da minha): entra
+        // na tela ao vivo. Antes o celular descartava e via a resposta a algo
+        // invisível. Dedupe: casa com o balão otimista em voo.
+        const echo = String(e.text || '');
+        const stripped = echo.replace(/^[^\n:]{1,40}: /, '');
+        const matches = (t: string) => !!t && (echo === t || stripped === t || echo.endsWith(': ' + t) || t.endsWith(stripped));
+        const hit = inflightRef.current.find((f) => matches(f));
+        if (!busyRef.current) { setBusy(true); busyRef.current = true; }
+        setMsgs((m) => {
+          if (hit) {
+            inflightRef.current = inflightRef.current.filter((f) => f !== hit);
+            for (let i = m.length - 1; i >= 0; i--) if (m[i].role === 'user' && m[i].text === hit) { const next = [...m]; next[i] = { ...next[i], text: echo }; return next; }
+          }
+          return [...m, { role: 'user', text: echo }];
+        });
+        return;
+      }
+      if ((e.type === 'thinking' || e.type === 'delta' || e.type === 'tool-use' || e.type === 'assistant-text') && !busyRef.current) { setBusy(true); busyRef.current = true; }
+      if ((e as any).type === 'queue') { setQueued(Array.isArray((e as any).items) ? (e as any).items : []); return; }
       if (e.type === 'delta') {
         if (vmodeRef.current && e.text) {
           ttsAccumRef.current += e.text;
@@ -905,7 +993,11 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
         }
       } else if (e.type === 'tool-result') {
         setMsgs((m) => [...m, { role: 'tool-result', toolUseId: e.toolUseId, text: e.text, isError: e.isError }]);
-      } else if (e.type === 'result' || e.type === 'done') {
+      } else if (e.type === 'result') {
+        // O texto final chegou, mas o processo ainda fecha: só o `done` é o fim
+        // do turno (tratar `result` como fim drenava a fila cedo demais).
+        setMsgs((m) => m.map((x) => ({ ...x, _live: false })));
+      } else if (e.type === 'done') {
         setMsgs((m) => m.map((x) => ({ ...x, _live: false })));
         setRecentTools([]);
         if (navigator.vibrate) navigator.vibrate(30);
@@ -922,20 +1014,9 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
               .catch(() => { try { new Notification(nTitle, { body: nBody }); } catch {} });
           }
         } catch {}
-        // Turno parado pelo usuário: não continua a fila nem avisa que "terminou".
+        // Turno parado pelo usuário: não avisa que "terminou".
         if ((e as any).cancelled) return;
-        // Drena fila de mensagens pendentes
-        const nextQueued = msgQueueRef.current.shift();
-        if (nextQueued) {
-          setMsgs((m) => {
-            const idx = [...m].reverse().findIndex((x: any) => x.queued && x.text === nextQueued);
-            if (idx < 0) return m;
-            const copy = [...m];
-            copy[copy.length - 1 - idx] = { ...copy[copy.length - 1 - idx], queued: false };
-            return copy;
-          });
-          setTimeout(() => send(nextQueued, { fromQueue: true }), 120);
-        }
+        // (A fila é do HOST: ele drena e o próximo turno chega como evento.)
         if (vmodeRef.current) {
           ttsDoneRef.current = true;
           flushTtsAccum(true);
@@ -1004,15 +1085,18 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
     // slash que mapeiam pros pickers, resolvidos localmente
     const mModel = raw.match(/^\/model\s+(\S+)/); if (mModel) { if (!fromVoice) setText(''); return patch({ model: mModel[1] }); }
     const mTh = raw.match(/^\/thinking\s+(none|low|medium|high)/); if (mTh) { if (!fromVoice) setText(''); return patch({ thinkingMode: mTh[1] }); }
-    // Enfileira se IA está respondendo (exceto voz e mensagens vindas da fila)
+    // IA respondendo (por mim ou por outro device): vai pra fila DO HOST — a
+    // mesma que o desktop vê. O eco chega quando o host despachar.
     if (busyRef.current && !opts?.fromQueue && !fromVoice) {
       if (!fromVoice) setText('');
-      msgQueueRef.current.push(raw);
-      setMsgs((m) => [...m, { role: 'user', text: raw, queued: true }]);
+      inflightRef.current = [...inflightRef.current, raw];
+      try { await (M().claude as any).queueAdd?.(project.id, raw); } catch {}
       return;
     }
     if (!fromVoice) setText('');
     if (vmodeRef.current) resetTtsState();
+    interactedRef.current = true;
+    inflightRef.current = [...inflightRef.current, raw];
     setBusy(true); busyRef.current = true;
     setMsgs((m) => [...m, { role: 'user', text: raw }]);
     try { await M().claude.send(project.id, raw); } catch { setBusy(false); busyRef.current = false; }
@@ -1147,11 +1231,17 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
             <button onClick={() => { setHistErr(''); M().claude.loadHistory(project.id).then((h: any) => { if (Array.isArray(h) && h.length) { mHistCache.set(project.id, h); setMsgs(h); } }); }}>{t('mobile.retry')}</button>
           </div>
         )}
-        {visibleMsgs.hidden > 0 && (
+        {visibleMsgs.hidden > 0 ? (
           <button className="m-load-more" onClick={() => setWindowSize((w) => w + 200)}>
             {t('chat.loadOlder', { n: Math.min(200, visibleMsgs.hidden) })}
           </button>
-        )}
+        ) : (msgs.length >= 100 && serverMore && !busy) ? (
+          <button className="m-load-more" disabled={loadingOlder} onClick={async () => {
+            setLoadingOlder(true);
+            try { const h = await M().claude.loadHistory(project.id, { limit: msgs.length + 200 } as any); if (Array.isArray(h) && h.length > msgs.length) { mHistCache.set(project.id, h); setMsgs(h); setWindowSize((w) => w + 200); } else setServerMore(false); }
+            catch { setServerMore(false); } finally { setLoadingOlder(false); }
+          }}>{loadingOlder ? '…' : t('chat.loadOlderHost')}</button>
+        ) : null}
         {(() => {
           // Pareia cada tool-use com seu tool-result (mesma toolUseId) pra
           // mostrar como UM acordeão só, em vez de 2 bubbles separados.
@@ -1194,6 +1284,11 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
             return <div key={i} className={`m-bubble ${m.role}${m.queued ? ' queued' : ''}`}>{m.queued ? '⏳ ' : ''}{m.text}</div>;
           });
         })()}
+        {queued.map((q: any) => (
+          <div key={q.id} className="m-bubble user queued">⏳ {q.text}
+            <button className="m-link" style={{ marginLeft: 6 }} onClick={() => (M().claude as any).queueRemove?.(project.id, q.id)}>×</button>
+          </div>
+        ))}
         {busy && <div className="m-busy-pill"><span>{t('voice.thinking')}</span></div>}
         <div ref={endRef} />
       </div>

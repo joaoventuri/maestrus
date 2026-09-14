@@ -85,7 +85,7 @@ export default function RunsPanel({ projectId, onClose, global = false }: { proj
 
   async function stop(id: string) {
     setBusy(id);
-    try { await window.maestrus.runs.stop(id); await load(); } finally { setBusy(''); }
+    try { await (window.maestrus.runs as any).stop(id, projectId); await load(); } finally { setBusy(''); }
   }
 
   return (

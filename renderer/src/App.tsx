@@ -43,6 +43,13 @@ export default function App() {
   const [view, setView] = useState<View>('empty');
   const [selfhost, setSelfhost] = useState<any>(null);
   const [showNew, setShowNew] = useState(false);
+  // Acesso compartilhado encerrado pelo dono (revogado/vencido): avisa em vez
+  // de os projetos só sumirem da lista.
+  const [leftNotice, setLeftNotice] = useState<{ reason: string } | null>(null);
+  useEffect(() => {
+    const off = (window as any).maestrus?.invite?.onLeft?.((r: any) => { setLeftNotice({ reason: r?.reason || 'revoked' }); reloadProjects(); });
+    return () => { try { off && off(); } catch {} };
+  }, []);
   // Quando o Inicializador roda o fluxo com o marcador de voz, alvo = id do
   // Maestrus; o ProjectChat correspondente abre o modo voz ao montar e limpa.
   const [voiceTarget, setVoiceTarget] = useState<string | null>(null);
@@ -445,6 +452,11 @@ export default function App() {
         />
       )}
       {!isWeb && <TitleBar />}
+      {leftNotice && (
+        <div className="demo-banner" onClick={() => setLeftNotice(null)} style={{ cursor: 'pointer' }}>
+          <strong>{t('team.leftTitle')}</strong> — {leftNotice.reason === 'expired' ? t('team.leftExpired') : t('team.leftRevoked')}
+        </div>
+      )}
       <UpdateBanner />
       <GlobalRunsIndicator />
       {isDemo && (

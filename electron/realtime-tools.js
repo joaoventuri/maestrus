@@ -172,7 +172,8 @@ async function run(name, args, ctx) {
       if (!p) return { error: 'project_not_found' };
       const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 60);
       try {
-        const hist = await claudePty.loadHistory(p);
+        const rc = require('./remote-client');
+        const hist = (rc.isRemote && rc.isRemote(p.id)) ? await rc.loadHistory(p.id) : await claudePty.loadHistory(p);
         const msgs = (Array.isArray(hist) ? hist : [])
           .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && m.text)
           .slice(-limit)
@@ -187,8 +188,12 @@ async function run(name, args, ctx) {
       const p = resolveProject(args.project_id) || (ctx.projectId ? projectStore.get(ctx.projectId) : null);
       if (!p) return { error: 'project_not_found' };
       let busy = false;
-      try { busy = !!claudePty.isBusy(p.id); } catch {}
-      if (!busy) { try { busy = !!require('./codex-pty').isBusy(p.id); } catch {} }
+      const rc = require('./remote-client');
+      if (rc.isRemote && rc.isRemote(p.id)) { try { busy = !!(await rc.statusOf(p.id)).busy; } catch {} }
+      else {
+        try { busy = !!claudePty.isBusy(p.id); } catch {}
+        if (!busy) { try { busy = !!require('./codex-pty').isBusy(p.id); } catch {} }
+      }
       return {
         project: p.name,
         working: busy,

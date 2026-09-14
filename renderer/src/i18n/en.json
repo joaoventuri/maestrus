@@ -16,7 +16,8 @@
     "edit": "Edit",
     "delete": "Delete",
     "close": "Close",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "ok": "OK"
   },
   "boot": {
     "loading": "starting…"
@@ -85,7 +86,8 @@
     "loadOlder": "Load {n} older messages",
     "attachTooBig": "File too large (max 20 MB).",
     "attachFail": "Failed to upload attachment",
-    "toolsRan": "tools ran"
+    "toolsRan": "tools ran",
+    "loadOlderHost": "Load older messages from the host"
   },
   "settings": {
     "title": "Settings",
@@ -991,7 +993,8 @@
     "active": "in use",
     "hostOffline": "Host offline",
     "teamBound": "Team account — reserved for shared accesses",
-    "teamShort": "team"
+    "teamShort": "team",
+    "teamBoundMsg": "This account is reserved for a shared access. Remove it from the access in Remote Access to use it again."
   },
   "runs": {
     "title": "Background",
@@ -1048,7 +1051,7 @@
     "shareOneHost": "Pick conversations from ONE machine per link (an invite belongs to one room).",
     "shareNoRoom": "The host of those conversations has no invite room yet — generate an invite there first.",
     "emailLabel": "Or send to a Maestrus e-mail (optional)",
-    "emailSent": "Sent to {email} — the conversations will appear when they log in.",
+    "emailSent": "Access granted to {email} — it shows up when that person opens Maestrus signed in with that e-mail (no e-mail is sent).",
     "emailNotFound": "That e-mail has no maestrus.cloud account — use the link.",
     "emailFailed": "Couldn't register the delivery — use the link.",
     "aiTitle": "Claude account",
@@ -1071,7 +1074,22 @@
     "aiPoolShort": "{n} accounts",
     "shareMain": "Main conversation",
     "sharePartial": "partial",
-    "sharePickHint": "Pick the whole project (future forks included) or expand and choose conversation by conversation — whatever is left out does not exist for the guest."
+    "sharePickHint": "Pick the whole project (future forks included) or expand and choose conversation by conversation — whatever is left out does not exist for the guest.",
+    "leftTitle": "Access ended",
+    "leftRevoked": "The owner ended your access to these conversations. Ask for a new invite if needed.",
+    "leftExpired": "Your access to these conversations has expired. Ask the owner for a new invite.",
+    "hostOff": "Host is off — shared accesses only work while it is on.",
+    "expires": "expires {date}",
+    "delivered": "joined",
+    "notOpened": "not opened yet",
+    "online": "online now",
+    "sharedWithMe": "Shared with me",
+    "sharedWithMeSub": "Conversations other people granted to your e-mail. One access at a time.",
+    "enter": "Enter",
+    "current": "current",
+    "askNameTitle": "How should the team see you?",
+    "askNameHint": "Your name signs what you write and shows to everyone in the room.",
+    "leftBanner": "Your access to {host} was ended by the owner."
   },
   "llm": {
     "title": "LLM Accounts",

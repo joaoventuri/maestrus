@@ -384,9 +384,9 @@ declare global {
       };
       runs: {
         list: (projectId?: string) => Promise<BackgroundRun[]>;
-        get: (runId: string) => Promise<BackgroundRun | null>;
-        log: (runId: string) => Promise<string | null>;
-        stop: (runId: string) => Promise<{ ok: boolean; error?: string }>;
+        get: (runId: string, projectId?: string) => Promise<BackgroundRun | null>;
+        log: (runId: string, projectId?: string) => Promise<string | null>;
+        stop: (runId: string, projectId?: string) => Promise<{ ok: boolean; error?: string }>;
         start: (opts: { projectId?: string; command: string; cwd?: string; label?: string }) => Promise<BackgroundRun>;
         activeCount: (projectId?: string) => Promise<number>;
         onChange: (handler: (run: BackgroundRun) => void) => () => void;
@@ -448,7 +448,7 @@ declare global {
         // Verdade do host sobre o turno: usado para reconciliar o indicador de
         // atividade quando o evento 'done' se perde no caminho.
         isBusy: (projectId: string) => Promise<boolean>;
-        loadHistory: (projectId: string) => Promise<ChatMessage[]>;
+        loadHistory: (projectId: string, opts?: { limit?: number }) => Promise<ChatMessage[]>;
         usage: (opts?: { scope?: 'all' | 'project'; projectId?: string }) => Promise<UsageReport>;
         version: () => Promise<string>;
         logout: () => Promise<{ code: number; output: string }>;

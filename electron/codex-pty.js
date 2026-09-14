@@ -75,9 +75,7 @@ function effectiveModel(project) {
 // ─── Envio de um turno ──────────────────────────────────────────────────────
 async function send(project, message) {
   if (procs.has(project.id)) {
-    const old = procs.get(project.id);
-    try { old.kill('SIGKILL'); } catch {}
-    procs.delete(project.id);
+    const err = new Error('turn_in_progress'); err.code = 'turn_in_progress'; throw err;   // um turno por conversa (ver claude-pty)
   }
   if (!project.codeDir || !fs.existsSync(project.codeDir)) {
     throw new Error(`codeDir não existe ou não foi configurado: ${project.codeDir}`);
