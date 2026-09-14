@@ -17,6 +17,7 @@ interface Attachment {
 
 interface Props {
   onSend: (text: string, attachments?: Attachment[]) => void;
+  onTyping?: () => void;
   onStop: () => void;
   busy: boolean;
   /** Parar já foi pedido, mas o turno ainda não morreu — botão travado no lugar. */
@@ -73,7 +74,7 @@ function saveDraft(key: string | undefined, text: string, attachments: Attachmen
   } catch { /* cota cheia: rascunho é conveniência, nunca quebra o envio */ }
 }
 
-export default function MessageInput({ onSend, onStop, busy, stopping, canStop = true, onAudioNote, onOpenJarvis, jarvisAvailable, engine, model, onModel, thinking, onThinking, permission, onPermission, draftKey }: Props) {
+export default function MessageInput({ onSend, onStop, busy, stopping, canStop = true, onAudioNote, onOpenJarvis, jarvisAvailable, engine, model, onModel, thinking, onThinking, permission, onPermission, draftKey, onTyping }: Props) {
   const { t } = useT();
   const [text, setText] = useState('');
   const [showSlash, setShowSlash] = useState(false);
@@ -286,7 +287,7 @@ export default function MessageInput({ onSend, onStop, busy, stopping, canStop =
           className="input-textarea"
           placeholder={busy ? t('chat.queuePlaceholder') : t('chat.placeholder')}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => { setText(e.target.value); if (e.target.value) onTyping?.(); }}
           onKeyDown={onKey}
           onPaste={onPaste}
           rows={1}

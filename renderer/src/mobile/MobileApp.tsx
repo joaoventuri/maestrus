@@ -1,4 +1,5 @@
 import { staleWorking, reconcile } from '../lib/activity-store';
+import PresenceBar, { useTypingSignal } from '../components/PresenceBar';
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { marked } from 'marked';
 import { Share, X, QrCode, User, ExternalLink, LogOut, Sparkles, Mic, AudioLines, ChevronLeft, ChevronRight, ChevronDown, MessageSquare, GitBranch, Settings, ArrowUp, Kanban as KanbanIcon, CloudCog, Check, Cpu, Brain, ShieldOff, ShieldCheck, ShieldAlert, Shield, Square, KeyRound, ArrowRight, Trash2, AlertCircle, Bell, RefreshCw, Server, Copy, Power, HardDrive, Paperclip, Camera } from 'lucide-react';
@@ -507,12 +508,15 @@ function Connect({ t, onAccount, onLogout }: any) {
     const raw = String(v || '').trim();
     return (raw.length > 14 || /^maestrus:\/\//i.test(raw)) ? raw : raw.toUpperCase();
   }
+  const errFor = (e: any) => e === 'expired' ? t('invite.errExpired') : e === 'host_offline' ? t('team.errHostOffline') : e === 'relay_unreachable' ? t('team.errRelay') : e === 'revoked' ? t('team.leftRevoked') : t('mobile.badCode');
   async function go(c?: string) {
     const val = normCode(c ?? code); if (!val) return; setBusy(true); setErr('');
     const r = await M().remote.connect(val);
-    if (!r.ok) setErr(t('mobile.badCode'));
+    if (!r.ok) setErr(errFor(r.error));
     setBusy(false);
   }
+  // Link #c= que falhou: diz POR QUÊ (vencido, host desligado, sem relay).
+  useEffect(() => { (M() as any).invite?.state?.().then((st: any) => { if (st?.hashJoin === 'failed' && st?.hashJoinError) setErr(errFor(st.hashJoinError)); }).catch(() => {}); }, []);
   if (scan) return <QrScanner t={t} onClose={() => setScan(false)} onResult={(c: string) => { setScan(false); setCode(normCode(c)); go(c); }} />;
 
   // Enquanto procura as máquinas da conta (primeira tentativa)
@@ -559,7 +563,7 @@ function Connect({ t, onAccount, onLogout }: any) {
         <div className="m-form" style={{ marginBottom: 8 }}>
           <label className="m-label">{t('team.sharedWithMe')}</label>
           {shares.map((sh: any) => (
-            <button key={sh.id} type="button" className="m-codex-connect" style={{ marginTop: 6 }} onClick={async () => { setBusy(true); const r = await (M() as any).invite?.joinShare?.(sh.id).catch(() => null); setBusy(false); if (!r?.ok) setErr(t('mobile.badCode')); }}>
+            <button key={sh.id} type="button" className="m-codex-connect" style={{ marginTop: 6 }} onClick={async () => { setBusy(true); const r = await (M() as any).invite?.joinShare?.(sh.id).catch(() => null); setBusy(false); if (!r?.ok) setErr(errFor(r?.error)); }}>
               {sh.owner_name || sh.owner_email} · {sh.host_name || ''}
             </button>
           ))}
@@ -724,6 +728,7 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
   const [oaiErr, setOaiErr] = useState('');
   const [showOaiUpsell, setShowOaiUpsell] = useState(false);
   const [windowSize, setWindowSize] = useState(200);
+  const signalTyping = useTypingSignal(project.id);
   const [serverMore, setServerMore] = useState(true);   // o host ainda tem histórico antes do que veio
   const [loadingOlder, setLoadingOlder] = useState(false);
   useEffect(() => { setServerMore(true); }, [project.id]);
@@ -1106,7 +1111,7 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
     <div className="m-screen m-chat">
       <header className="m-top">
         <button className="m-link" onClick={onBack} aria-label="Back"><ChevronLeft size={22} /></button>
-        <span className="m-chat-id"><b className="m-chat-title">{project.name}</b><ConnectionStatus variant="pill" /></span>
+        <span className="m-chat-id"><b className="m-chat-title">{project.name}</b><ConnectionStatus variant="pill" /><PresenceBar projectId={project.id} compact /></span>
         <button className="m-gear" onClick={() => setShowSet((v) => !v)} aria-label="Settings"><Settings size={17} /></button>
       </header>
 
@@ -1360,7 +1365,7 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
         <div className="m-input">
           <button className="m-attach-btn" onClick={() => fileRef.current?.click()} title="Anexar arquivo" aria-label="Anexar"><Paperclip size={17} /></button>
           <button className="m-attach-btn" onClick={() => camRef.current?.click()} title="Tirar foto" aria-label="Câmera"><Camera size={17} /></button>
-          <textarea value={text} onChange={(e) => setText(e.target.value)}
+          <textarea value={text} onChange={(e) => { setText(e.target.value); if (e.target.value) signalTyping(); }}
             placeholder={busy ? t('mobile.queuePlaceholder') : t('mobile.placeholder')}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} rows={1} />
           {voiceOk && !text.trim() && !busy && (

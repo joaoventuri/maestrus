@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { ChatMessage, ClaudeEvent, ModelChoice, PermissionMode, Project, ThinkingMode } from '../types';
 import MessageList from './MessageList';
+import PresenceBar, { useTypingSignal } from './PresenceBar';
 import MessageInput from './MessageInput';
 import QuickReplies from './QuickReplies';
 import QueuePanel from './QueuePanel';
@@ -149,6 +150,7 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
 
   // Histórico remoto vem em páginas (o host manda só a cauda). Pede uma cauda
   // maior; se não cresceu, não há mais nada antes.
+  const signalTyping = useTypingSignal(project.id);
   const [serverMore, setServerMore] = useState(true);
   useEffect(() => { setServerMore(true); }, [project.id]);
   async function loadOlderFromHost(): Promise<boolean> {
@@ -1110,6 +1112,7 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
           <ConnectionStatus variant="pill" hostLabel={project.remoteHostName || null} />
           {/* Só aparece quando há processo vivo em segundo plano. */}
           <RunsChip projectId={project.id} onOpen={() => setRunsOpen((v) => !v)} />
+          <PresenceBar projectId={project.id} />
         </div>
         <EnginePicker value={engine} onChange={setEngine} avail={engineAvail} />
         {isMaestrus && (
@@ -1263,6 +1266,7 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
       <QueuePanel items={queued} projectId={project.id} />
       <MessageInput
         draftKey={project.id}
+        onTyping={signalTyping}
         onSend={send}
         onStop={stop}
         stopping={stopping}

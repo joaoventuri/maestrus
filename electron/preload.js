@@ -348,6 +348,11 @@ contextBridge.exposeInMainWorld('maestrus', {
     forget: () => ipcRenderer.invoke('selfhost:forget'),
   },
   // Pareamento por convite (sem conta): host gera, client cola.
+  // Colaboração ao vivo: quem está na conversa e "estou escrevendo".
+  team: {
+    who: (projectId) => ipcRenderer.invoke('team:who', projectId),
+    typing: (projectId, typing) => ipcRenderer.invoke('team:typing', { projectId, typing }),
+  },
   invite: {
     create: (opts) => ipcRenderer.invoke('invite:create', opts || {}),
     state: () => ipcRenderer.invoke('invite:state'),

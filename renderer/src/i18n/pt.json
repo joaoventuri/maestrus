@@ -1089,7 +1089,11 @@
     "current": "atual",
     "askNameTitle": "Como quer aparecer para a equipe?",
     "askNameHint": "Seu nome assina o que você escreve e aparece para quem está na sala.",
-    "leftBanner": "Seu acesso a {host} foi encerrado pelo dono."
+    "leftBanner": "Seu acesso a {host} foi encerrado pelo dono.",
+    "typingOne": "{name} está escrevendo…",
+    "typingMany": "{n} pessoas escrevendo…",
+    "errHostOffline": "A máquina do dono está desligada ou sem internet — tente de novo quando ela estiver ligada.",
+    "errRelay": "Não consegui chegar ao servidor de conexão. Verifique sua internet."
   },
   "llm": {
     "title": "Contas LLM",

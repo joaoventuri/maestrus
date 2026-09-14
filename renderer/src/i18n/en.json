@@ -1089,7 +1089,11 @@
     "current": "current",
     "askNameTitle": "How should the team see you?",
     "askNameHint": "Your name signs what you write and shows to everyone in the room.",
-    "leftBanner": "Your access to {host} was ended by the owner."
+    "leftBanner": "Your access to {host} was ended by the owner.",
+    "typingOne": "{name} is typing…",
+    "typingMany": "{n} people typing…",
+    "errHostOffline": "The owner's machine is off or offline — try again when it is on.",
+    "errRelay": "Could not reach the connection server. Check your internet."
   },
   "llm": {
     "title": "LLM Accounts",

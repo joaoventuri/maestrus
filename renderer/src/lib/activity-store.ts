@@ -67,7 +67,9 @@ export function noteEvent(evt: any): void {
     const prev = map.get(id);
     // Terminou: se está aberto/ativo → idle (já está vendo). Senão, e estava
     // mesmo trabalhando, marca unread (terminou mas ninguém leu).
-    const status: ActivityStatus = id === activeId ? 'idle' : (prev?.status === 'working' ? 'unread' : 'idle');
+    // Device que só recebeu o `done` (conectou no meio do turno, acordou no
+    // fim): também terminou algo que ele não leu → unread, não idle.
+    const status: ActivityStatus = (id === activeId || (evt as any).cancelled) ? 'idle' : 'unread';
     map.set(id, { status, phase: null, since: Date.now() });
     emit();
   }
@@ -97,7 +99,7 @@ export function staleWorking(staleMs = 15000): string[] {
  */
 export function reconcile(id: string, busy: boolean): void {
   const prev = map.get(id);
-  if (!prev) return;
+  if (!prev) { if (busy) { map.set(id, { status: 'working', phase: null, since: Date.now() }); emit(); } return; }
   if (busy) {
     // Ainda rodando: renova o relógio para não reconciliar em loop.
     map.set(id, { ...prev, since: Date.now() });

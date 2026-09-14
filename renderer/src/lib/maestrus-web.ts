@@ -782,6 +782,7 @@ let _teamSid: string | null = null;
 // descoberta da conta corria em paralelo, conectava no container e FECHAVA o
 // link da sala no meio do join ("mostra só conectado ao Maestrus Cloud").
 let _hashJoin: 'none' | 'joining' | 'done' | 'failed' = 'none';
+let _hashJoinError: string | null = null;
 let _hashJoinPromise: Promise<any> | null = null;
 async function awaitHashJoin() { if (_hashJoinPromise) { try { await _hashJoinPromise; } catch {} } }
 
@@ -1122,6 +1123,7 @@ export function installMaestrusWeb() {
           joinInvite(code)
             .then((r) => {
               _hashJoin = r && r.ok ? 'done' : 'failed';
+              _hashJoinError = r && r.ok ? null : String((r && r.error) || 'unknown');
               if (r && r.ok) { try { sessionStorage.removeItem('maestrus_pending_invite'); } catch {} }
               resolve(r);
             })
@@ -1354,6 +1356,8 @@ export function installMaestrusWeb() {
     },
     models: { discovered: async () => [] },
     team: {
+      who: async () => { if (!link) return { ok: false, peers: [] }; return link.rpc('team.who', {}, 8000).catch(() => ({ ok: false, peers: [] })); },
+      typing: async (projectId: string, typing: boolean) => { const r = parseId(projectId); if (!r || !link) return { ok: false }; return link.rpc('team.typing', { projectId: r.projectId, typing: !!typing }, 5000).catch(() => ({ ok: false })); },
       getName: async () => ({ name: teamName() }),
       setName: async (n: string) => { setTeamName(n); return { ok: true }; },
     },
@@ -1431,7 +1435,7 @@ export function installMaestrusWeb() {
         return j;
       },
       leftReason: async () => { const r = _leftReason; _leftReason = null; return { reason: r }; },
-      state: async () => { const i = savedInvite(); return { ok: true, relayUrl: i?.relayUrl || '', hashJoin: _hashJoin, host: null, client: i ? { room: i.room || '', hostName: i.hostName || null, relayUrl: i.relayUrl, scoped: !!(i.grant && i.grantSig) } : null }; },
+      state: async () => { const i = savedInvite(); return { ok: true, relayUrl: i?.relayUrl || '', hashJoin: _hashJoin, hashJoinError: _hashJoinError, host: null, client: i ? { room: i.room || '', hostName: i.hostName || null, relayUrl: i.relayUrl, scoped: !!(i.grant && i.grantSig) } : null }; },
       revoke: async () => ({ ok: true }),
       join: async (code: string) => joinInvite(code),
       leave: async () => {

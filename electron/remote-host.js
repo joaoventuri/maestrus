@@ -205,6 +205,7 @@ function dropGrantBindings(grantId) {
       subscribers.delete(did);
       linkOf.delete(did);
       peers.delete(did);
+      presenceChanged();
       n++;
     }
   }
@@ -341,7 +342,7 @@ function safeProjects() {
 // Guest read-only só pode ler; guest write pode operar sobre os projetos do
 // escopo. Canais que afetam a CONTA/HOST inteiro (delete, create, usage,
 // version, logout) NUNCA são expostos a um GUEST — só ao dono.
-const SHARE_READ_CHANNELS = new Set(['projects.list', 'projects.get', 'claude.loadHistory', 'ping', 'files.tree', 'files.read', 'files.readChunk', 'queue.list', 'runs.list', 'runs.get', 'runs.log', 'claudeMd.read']);
+const SHARE_READ_CHANNELS = new Set(['projects.list', 'projects.get', 'claude.loadHistory', 'ping', 'files.tree', 'files.read', 'files.readChunk', 'queue.list', 'runs.list', 'runs.get', 'runs.log', 'claudeMd.read', 'team.who']);
 const SHARE_WRITE_CHANNELS = new Set([
   ...SHARE_READ_CHANNELS,
   'claude.send', 'claude.stop', 'projects.patch',
@@ -350,7 +351,7 @@ const SHARE_WRITE_CHANNELS = new Set([
   'queue.list', 'queue.enqueue', 'queue.remove', 'queue.reorder', 'queue.clear', 'persona.get',
   // Execuções em segundo plano: ver é leitura; iniciar/parar mexe na máquina.
   'runs.list', 'runs.get', 'runs.log', 'runs.stop', 'runs.start', 'runs.activeCount',
-  'claudeMd.write', 'claudeMd.ensure',
+  'claudeMd.write', 'claudeMd.ensure', 'team.typing',
 ]);
 // Canais GLOBAIS da conta — negados a QUALQUER não-dono (guest E membro): mexem
 // na conta Claude do host (logout desloga o OAuth do dono) ou vazam billing.
@@ -481,6 +482,7 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
       teamBindings.set(from, { pids: null, write: true, name, sid });
       subscribers.set(from, { pids: null, write: true });
       if (name) { peers.set(from, { ...(peers.get(from) || { deviceId: from, since: Date.now() }), deviceId: from, name }); onState && onState(getState()); }
+      presenceChanged();
       return reply({ ok: true, sid, full: true });
     }
     // Convidado com escopo: grant assinado + ainda listado (revogável) na loja.
@@ -497,6 +499,7 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
       // Presença com identidade: o dono vê "tecnologia@ · Maria", não "4f2a1b".
       peers.set(from, { ...(peers.get(from) || { deviceId: from, since: Date.now() }), deviceId: from, name: name || (peers.get(from) || {}).name || null, email: rec.email || null, grantId: g.id });
       onState && onState(getState());
+      presenceChanged();
       return reply({ ok: true, sid, pids: [...pids], write: !!g.w, expiresAt: exp });
     }
     return reply({ ok: false, error: 'invalid' });
@@ -772,7 +775,7 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
       case 'team.revokeGrant': {
         try {
           const all = projectStore.getSetting('invite_grants') || [];
-          for (const g of all) if (g && g.id === String(payload.id)) g.revoked = true;
+          for (const g of all) if (g && g.id === String(payload.id)) { g.revoked = true; g.revokedAt = Date.now(); }
           projectStore.setSetting('invite_grants', all);
         } catch {}
         dropGrantBindings(payload.id);   // corta quem JÁ está dentro, agora
@@ -946,6 +949,8 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
         return reply(!!conv);
       }
       case 'ping': return reply({ ok: true, t: Date.now() });
+      case 'team.who': return reply({ ok: true, peers: roster(), me: from });
+      case 'team.typing': { broadcastTyping(from, String(payload.projectId || ''), !!payload.typing); return reply({ ok: true }); }
 
       // ─── Slash commands remotos (Maestrus client → host) ──────────────────
       // Espelham os handlers claude:* do main.js; usados quando o cliente é
@@ -1154,6 +1159,7 @@ function start(opts) {
         peers.set(f.deviceId, { deviceId: f.deviceId, name: f.name || null, since: Date.now() });
       }
       onState && onState(getState());
+      presenceChanged();
     },
     onStatus: (s) => { state.status = s; onState && onState({ ...state }); },
   });
@@ -1240,6 +1246,7 @@ function startTeamRoom(url) {
         peers.set(f.deviceId, { deviceId: f.deviceId, name: f.name || null, since: Date.now() });
       }
       onState && onState(getState());
+      presenceChanged();
     },
   });
   teamLink = tl;
@@ -1305,6 +1312,40 @@ function scopedView(entry, safe) {
   const picked = [...entry.pids].filter((x) => x.startsWith(prefix)).map((x) => x.slice(prefix.length));
   return { ...safe, conversations: (safe.conversations || []).filter((c) => picked.includes(String(c.id))), mainShared: picked.includes('main'), partial: true };
 }
+// ─── Colaboração ao vivo: quem está na sala e quem está escrevendo ─────────
+// O roster inclui o DONO (esta máquina) — pro convidado, o dono também é
+// "alguém na conversa". Toda mudança vira evento `team.presence` pra todos
+// os devices (e pra janela do host); digitar vira `team.typing` pros outros.
+let _ownerName = '';
+let _onLocalEvent = null;          // main injeta: evento pra JANELA do host
+function setOwnerName(n) { _ownerName = String(n || '').trim().slice(0, 40); presenceChanged(); }
+function setOnLocalEvent(fn) { _onLocalEvent = fn; }
+function roster() {
+  const list = [{ deviceId: 'host', name: _ownerName || (os.hostname() || 'Host'), owner: true, since: 0 }];
+  for (const p of peers.values()) list.push({ deviceId: p.deviceId, name: p.name || null, email: p.email || null, since: p.since || 0 });
+  return list;
+}
+let _presenceTimer = null;
+function presenceChanged() {
+  if (_presenceTimer) return;
+  _presenceTimer = setTimeout(() => {
+    _presenceTimer = null;
+    const ev = { type: 'team.presence', peers: roster(), timestamp: Date.now() };
+    try { _onLocalEvent && _onLocalEvent(ev); } catch {}
+    if ((!link && !teamLink) || subscribers.size === 0) return;
+    for (const did of subscribers.keys()) { try { sendTo(did, 'claude', ev); } catch {} }
+  }, 150);
+}
+function broadcastTyping(fromDid, projectId, typing) {
+  const who = fromDid === 'host' ? { deviceId: 'host', name: _ownerName || 'Host', owner: true } : (() => { const p = peers.get(fromDid) || {}; return { deviceId: fromDid, name: p.name || null, email: p.email || null }; })();
+  const ev = { type: 'team.typing', projectId, typing: !!typing, from: who, timestamp: Date.now() };
+  if (fromDid !== 'host') { try { _onLocalEvent && _onLocalEvent(ev); } catch {} }
+  for (const [did, entry] of subscribers) {
+    if (did === fromDid) continue;
+    if (!subCanSeePid(entry, projectId)) continue;
+    try { sendTo(did, 'claude', ev); } catch {}
+  }
+}
 let _onProjectsChanged = null;   // main injeta: a JANELA do host também precisa saber
 function setOnProjectsChanged(fn) { _onProjectsChanged = fn; }
 function notifyProjectsChanged() { try { _onProjectsChanged && _onProjectsChanged(); } catch {} }
@@ -1355,4 +1396,5 @@ function subscriberCount() { return subscribers.size; }
 
 module.exports = {
   inheritTeamAi, cleanupGrantAi, broadcastProjectRemoved, broadcastEvent, setOnProjectsChanged,
+  setOwnerName, setOnLocalEvent, roster, broadcastTyping,
   setTeamSecret, teamAiAdmin, dropGrantBindings, startTeamRoom, stopTeamRoom, teamRoomActive, setEnsureTeamRoom, start, stop, refreshProjects, updateToken, getState, isHealthy, setOnState, broadcastProjectPatch, subscriberCount };

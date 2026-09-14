@@ -637,3 +637,11 @@ button, input, textarea { font-family: inherit; }
 .m-hist-err { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: rgba(255,138,61,.08); border: 1px solid rgba(255,138,61,.35); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--text); }
 .m-hist-err code { font-family: var(--mono); font-size: 11px; color: var(--faint); }
 .m-hist-err button { margin-left: auto; background: var(--accent); border: none; color: #fff; border-radius: 8px; padding: 5px 12px; font-size: 12px; }
+
+.presence { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.presence-avatars { display: inline-flex; }
+.presence-avatar { width: 18px; height: 18px; border-radius: 50%; background: var(--bg-2, #1a1a1a); border: 1.5px solid var(--border, #333); color: var(--text, #eee); font-size: 8px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-left: -5px; }
+.presence-avatar:first-child { margin-left: 0; }
+.presence-avatar.owner { border-color: #ff8a3d; color: #ff8a3d; }
+.presence-typing { font-size: 10.5px; color: #ff8a3d; white-space: nowrap; max-width: 110px; overflow: hidden; text-overflow: ellipsis; animation: presencePulse 1.4s ease-in-out infinite; }
+@keyframes presencePulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }

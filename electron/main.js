@@ -680,11 +680,13 @@ app.whenReady().then(async () => {
   // "Be a Host always on" (default): se logado, vira host sozinho pra a máquina
   // já aparecer pros outros dispositivos da conta (web/mobile/outro desktop).
   // Pequeno atraso pra a janela e o estado assentarem antes de anunciar.
-  setTimeout(() => { maybeAutoHost(); resumeInvites(); claimEmailShares(); autoReconnectShares().catch(() => {}); }, 1500);
+  setTimeout(() => { pruneGrants(); maybeAutoHost(); resumeInvites(); claimEmailShares(); autoReconnectShares().catch(() => {}); }, 1500);
   // Execuções em segundo plano de sessões anteriores: os processos escrevem
   // direto em disco e NÃO morrem com o app — reidrata pra UI voltar a vê-los.
   try { runStore.rehydrate(); } catch {}
   try { remoteHost.setEnsureTeamRoom(() => ensureTeamRoom()); } catch {}
+  try { remoteHost.setOwnerName(userName()); } catch {}
+  try { remoteHost.setOnLocalEvent((ev) => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('claude:event', ev); } catch {} }); } catch {}
   try { remoteHost.setOnProjectsChanged(() => { try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('projects:changed'); } catch {} }); } catch {}
   try { remoteClient.setAuthorName(userName()); } catch {}
   // `maestrus://` — o convite vira link clicável e QR que abre o app já pareando.
@@ -902,7 +904,7 @@ ipcMain.handle('app:getCloudSettings', async () => {
 ipcMain.handle('app:setCloudSetting', async (_e, { key, value }) => {
   try { const all = projectStore.getSetting('user_settings') || {}; all[key] = value; projectStore.setSetting('user_settings', all); } catch {}
   // Nome mudou → o client remoto passa a assinar os próximos sends já com ele.
-  if (key === 'user_name') { try { remoteClient.setAuthorName(String(value || '')); } catch {} }
+  if (key === 'user_name') { try { remoteClient.setAuthorName(String(value || '')); } catch {} try { remoteHost.setOwnerName(String(value || '')); } catch {} }
   if (cloud.getAccount()) return cloud.userApi('user_settings', { op: 'set', key, value });
   return { ok: true };
 });
@@ -1037,10 +1039,10 @@ async function materializeCloudSkills() {
 // Mostra TUDO — inclusive skills instaladas fora do Maestrus (npx skills add,
 // plugins, à mão). As da conta aparecem com badge cloud e continuam sincronizando.
 // (Lógica em claude-powers.js — compartilhada com o RPC do web/PWA.)
-ipcMain.handle('skills:list', async () => require('./claude-powers').skills.list());
-ipcMain.handle('skills:get', async (_e, { id }) => require('./claude-powers').skills.get(id));
-ipcMain.handle('skills:save', async (_e, def) => require('./claude-powers').skills.save(def));
-ipcMain.handle('skills:delete', async (_e, { id }) => require('./claude-powers').skills.remove(id));
+ipcMain.handle('skills:list', async () => profilesCall('claudePowers.skillsList', {}, () => require('./claude-powers').skills.list()));
+ipcMain.handle('skills:get', async (_e, { id }) => profilesCall('claudePowers.skillsGet', { id }, () => require('./claude-powers').skills.get(id)));
+ipcMain.handle('skills:save', async (_e, def) => profilesCall('claudePowers.skillsSave', def, () => require('./claude-powers').skills.save(def)));
+ipcMain.handle('skills:delete', async (_e, { id }) => profilesCall('claudePowers.skillsDelete', { id }, () => require('./claude-powers').skills.remove(id)));
 
 // ─── Autenticação do Claude (gate: sem login, não manda prompt) ────────────
 // Conectado como CLIENT a um host → pergunta o estado da conta Claude DO HOST
@@ -1960,6 +1962,21 @@ ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
   }
   return out;
 });
+// Colaboração ao vivo. Client → pergunta ao host do projeto; dono → roster local.
+ipcMain.handle('team:who', async (_e, projectId) => {
+  const host = projectId && remoteClient.isRemote(projectId) ? remoteHostOf(projectId) : null;
+  if (host) { try { return await remoteClient.rpc(host, 'team.who', {}, 8000); } catch { return { ok: false, peers: [] }; } }
+  try { return { ok: true, peers: remoteHost.roster(), me: 'host' }; } catch { return { ok: true, peers: [] }; }
+});
+ipcMain.handle('team:typing', async (_e, { projectId, typing }) => {
+  if (projectId && remoteClient.isRemote(projectId)) {
+    const m = /^remote:([^:]+):(.+)$/.exec(projectId);
+    if (m) { try { await remoteClient.rpc(m[1], 'team.typing', { projectId: m[2], typing: !!typing }, 5000); } catch {} }
+    return { ok: true };
+  }
+  try { remoteHost.broadcastTyping('host', String(projectId || ''), !!typing); } catch {}
+  return { ok: true };
+});
 ipcMain.handle('invite:shareStatus', async () => {
   try { if (!(cloud.getAccount && cloud.getAccount())) return { ok: false }; const r = await cloud.teamShare('sent'); return r && r.ok ? { ok: true, shares: r.shares || [] } : { ok: false }; }
   catch { return { ok: false }; }
@@ -2016,13 +2033,13 @@ ipcMain.handle('invite:aiAdmin', async (_e, { op, grantId, hostId, code }) => {
 ipcMain.handle('invite:revokeGrant', async (_e, id, hostId) => {
   // A entrega por e-mail morre junto: o próximo sync em qualquer device da
   // pessoa tira o acesso da lista (o host já cortou quem estava dentro).
-  try { if (cloud.getAccount && cloud.getAccount()) cloud.teamShare('revoke_grant', { grant_id: String(id) }).catch(() => {}); } catch {}
+  queueShareRevoke(String(id));
   if (hostId) {
     try { return await remoteClient.teamRevokeGrant(hostId, id); } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
   }
   try {
     const all = projectStore.getSetting('invite_grants') || [];
-    for (const g of all) if (g && g.id === id) g.revoked = true;
+    for (const g of all) if (g && g.id === id) { g.revoked = true; g.revokedAt = Date.now(); }
     projectStore.setSetting('invite_grants', all);
   } catch {}
   try { remoteHost.dropGrantBindings(id); } catch {}   // acesso morre AGORA
@@ -2106,7 +2123,34 @@ function shareGrantIdOf(sh) {
   if (sh && sh.grant_id) return String(sh.grant_id);
   try { const p = invite.parse(sh.code); return p.ok && p.scoped && p.grant ? String(p.grant.id) : null; } catch { return null; }
 }
+// Revogação por e-mail sem conta logada no host: guarda e descarrega no
+// próximo sync com conta (senão a entrega ficava viva no inbox pra sempre).
+function queueShareRevoke(grantId) {
+  try {
+    const pend = new Set(projectStore.getSetting('pending_share_revokes') || []); pend.add(String(grantId));
+    projectStore.setSetting('pending_share_revokes', [...pend]);
+  } catch {}
+  flushShareRevokes().catch(() => {});
+}
+async function flushShareRevokes() {
+  if (!(cloud.getAccount && cloud.getAccount())) return;
+  let pend = []; try { pend = projectStore.getSetting('pending_share_revokes') || []; } catch {}
+  if (!pend.length) return;
+  const left = [];
+  for (const gid of pend) { try { const r = await cloud.teamShare('revoke_grant', { grant_id: String(gid) }); if (!(r && r.ok)) left.push(gid); } catch { left.push(gid); } }
+  try { projectStore.setSetting('pending_share_revokes', left); } catch {}
+}
+// #39: acessos revogados há mais de 30 dias ou vencidos não precisam viver no
+// store pra sempre (a lista do dono já os esconde; o histórico não serve).
+function pruneGrants() {
+  try {
+    const all = projectStore.getSetting('invite_grants') || [];
+    const keep = all.filter((g) => g && !(g.revoked && (Date.now() - (g.revokedAt || g.createdAt || 0)) > 30 * 86400e3) && !(g.e && Date.now() > g.e + 30 * 86400e3));
+    if (keep.length !== all.length) projectStore.setSetting('invite_grants', keep);
+  } catch {}
+}
 async function syncEmailShares() {
+  await flushShareRevokes().catch(() => {});
   try {
     if (!cloud.getAccount || !cloud.getAccount()) return;
     const r = await cloud.teamShare('list');

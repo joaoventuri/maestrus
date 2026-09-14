@@ -1089,7 +1089,11 @@
     "current": "actual",
     "askNameTitle": "¿Cómo quieres aparecer para el equipo?",
     "askNameHint": "Tu nombre firma lo que escribes y aparece para quien está en la sala.",
-    "leftBanner": "El dueño finalizó tu acceso a {host}."
+    "leftBanner": "El dueño finalizó tu acceso a {host}.",
+    "typingOne": "{name} está escribiendo…",
+    "typingMany": "{n} personas escribiendo…",
+    "errHostOffline": "La máquina del dueño está apagada o sin internet — intenta de nuevo cuando esté encendida.",
+    "errRelay": "No pude llegar al servidor de conexión. Revisa tu internet."
   },
   "llm": {
     "title": "Cuentas LLM",
