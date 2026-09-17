@@ -645,3 +645,7 @@ button, input, textarea { font-family: inherit; }
 .presence-avatar.owner { border-color: #ff8a3d; color: #ff8a3d; }
 .presence-typing { font-size: 10.5px; color: #ff8a3d; white-space: nowrap; max-width: 110px; overflow: hidden; text-overflow: ellipsis; animation: presencePulse 1.4s ease-in-out infinite; }
 @keyframes presencePulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+
+.m-bubble.assistant .aq-list { margin: 6px 0 0 18px; padding: 0; }
+.m-bubble.assistant .aq-list li { margin: 3px 0; }
+.m-bubble.assistant .aq-desc { color: var(--dim); }

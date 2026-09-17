@@ -168,14 +168,16 @@ export default function MessageList({ messages, streaming, onOpenLink, onSend, o
       return (
         <div key={key} className="msg assistant">
           {msg.text && <div className="msg-body markdown" dangerouslySetInnerHTML={{ __html: renderMd(msg.text || '') }} />}
+          {/* Opções da AskUserQuestion como TEXTO (lista numerada), sem botões:
+              o usuário responde digitando o número ou a opção. */}
           {msg.questions && msg.questions.map((q, qi) => (
             <div key={qi} className="aq-block">
               {q.question && <div className="aq-q">{q.question}</div>}
-              <div className="aq-opts">
+              <ol className="aq-list">
                 {q.options.map((o, oi) => (
-                  <button key={oi} className="aq-opt" title={o.description} onClick={() => onSend?.(o.label)}>{o.label}</button>
+                  <li key={oi}>{o.label}{o.description ? <span className="aq-desc"> — {o.description}</span> : null}</li>
                 ))}
-              </div>
+              </ol>
             </div>
           ))}
         </div>

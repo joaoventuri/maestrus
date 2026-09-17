@@ -3897,3 +3897,8 @@ html, body, #root {
 @keyframes presencePulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 .presence.compact .presence-avatar { width: 18px; height: 18px; font-size: 8px; }
 .presence.compact .presence-typing { font-size: 10.5px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+
+/* Opções da AskUserQuestion em texto (sem botões) */
+.aq-list { margin: 6px 0 0 18px; padding: 0; }
+.aq-list li { margin: 3px 0; }
+.aq-desc { color: var(--text-dim); }

@@ -1262,11 +1262,11 @@ function Chat({ t, project, onBack, onPatch, connected, guest: guestProp }: any)
                 {m.questions && m.questions.map((q: any, qi: number) => (
                   <div key={qi} className="aq-block">
                     {q.question && <div className="aq-q">{q.question}</div>}
-                    <div className="aq-opts">
+                    <ol className="aq-list">
                       {(q.options || []).map((o: any, oi: number) => (
-                        <button key={oi} className="aq-opt" title={o.description} onClick={() => send(o.label)}>{o.label}</button>
+                        <li key={oi}>{o.label}{o.description ? <span className="aq-desc"> — {o.description}</span> : null}</li>
                       ))}
-                    </div>
+                    </ol>
                   </div>
                 ))}
               </div>

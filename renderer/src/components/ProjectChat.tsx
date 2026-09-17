@@ -3,10 +3,8 @@ import { ChatMessage, ClaudeEvent, ModelChoice, PermissionMode, Project, Thinkin
 import MessageList from './MessageList';
 import PresenceBar, { useTypingSignal } from './PresenceBar';
 import MessageInput from './MessageInput';
-import QuickReplies from './QuickReplies';
 import QueuePanel from './QueuePanel';
 import AccountPicker from './AccountPicker';
-import { computeQuickReplies } from '../lib/quick-replies';
 import MetaPanel from './MetaPanel';
 import RunsPanel, { RunsChip } from './RunsPanel';
 import ClaudeMdEditor from './ClaudeMdEditor';
@@ -1167,10 +1165,6 @@ export default function ProjectChat({ project: initialProject, onProjectUpdate, 
         {runsOpen && <RunsPanel projectId={project.id} onClose={() => setRunsOpen(false)} />}
       </div>
 
-      {!busy && (() => {
-        const qr = computeQuickReplies(messages);
-        return qr ? <QuickReplies data={qr} onSend={(txt) => send(txt)} /> : null;
-      })()}
 
       <Suspense fallback={null}>
       {vmode && <JarvisMode

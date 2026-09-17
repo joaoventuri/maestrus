@@ -87,14 +87,14 @@ function findSessionFile(project) {
 }
 
 // Maestrus roda o Claude de forma não-interativa: o usuário responde na PRÓXIMA
-// mensagem, não no meio do turno. O Maestrus transforma as opções em botões
-// clicáveis (a partir do tool_use da AskUserQuestion ou de uma lista no texto).
-// Então: faça a pergunta, apresente as opções, e PARE — sem assumir resposta.
+// mensagem, não no meio do turno. As opções aparecem como TEXTO (lista
+// numerada) — sem botões na tela, por decisão do dono. Então: faça a pergunta,
+// apresente as opções numeradas, e PARE — sem assumir resposta.
 const ASK_GUIDANCE = [
   'You run inside Maestrus, where the user replies in the NEXT message (not mid-turn).',
-  'When you need the user to choose between options, present them with the AskUserQuestion tool (or a numbered list 1., 2., 3.), then STOP your turn and wait.',
-  'CRITICAL: in Maestrus the AskUserQuestion tool always returns an error such as "Answer questions?". This is EXPECTED and simply means Maestrus has shown the options to the user as clickable buttons. Do NOT interpret that error as the user closing, cancelling or declining; do NOT apologize, do NOT pick an answer yourself, and do NOT re-ask.',
-  'After presenting the options, end your turn quietly (a short line like "Escolha uma opção acima 👇" is fine). The user will click a button or type, and you continue then.',
+  'When you need the user to choose between options, present them as a numbered list (1., 2., 3.) in plain text, then STOP your turn and wait. Prefer the numbered list over the AskUserQuestion tool.',
+  'CRITICAL: in Maestrus the AskUserQuestion tool always returns an error such as "Answer questions?". This is EXPECTED and simply means Maestrus has shown the options to the user as a numbered list. Do NOT interpret that error as the user closing, cancelling or declining; do NOT apologize, do NOT pick an answer yourself, and do NOT re-ask.',
+  'After presenting the options, end your turn quietly (a short line like "Responda com o número da opção" is fine). The user will type the number or the option, and you continue then.',
   // ANTI-AMNESIA — diagnóstico real de uma sessão que perdeu o contexto:
   // o modelo ignorou um /compact summary de 3779 chars QUE ESTAVA NO PROMPT,
   // foi correr `Glob` + `cat MEMORY.md` num path inventado, deu vazio, e
