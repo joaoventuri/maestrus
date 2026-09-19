@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Server, Loader2, Wifi, WifiOff, Copy, Check, ShieldCheck, Smartphone, Link2, Trash2, Users, ChevronDown, ChevronRight, UserRound } from 'lucide-react';
+import { Server, Loader2, Wifi, WifiOff, Copy, Check, ShieldCheck, Smartphone, Link2, Trash2, Users, ChevronDown, ChevronRight, UserRound, GitBranch } from 'lucide-react';
 import { CloudAccount, RemoteHostState, RemoteClientState } from '../types';
 import { useT } from '../lib/i18n';
 
@@ -61,6 +61,7 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
   // Enviar por E-MAIL: se a pessoa tem conta no maestrus.cloud, o convite fica
   // na caixa dela e o app entra sozinho quando ela logar — nem link precisa.
   const [shareEmail, setShareEmail] = useState('');
+  const [shareOwnFork, setShareOwnFork] = useState(true);   // ramo por pessoa: padrão ligado (privacidade por natureza)
   const [shareNote, setShareNote] = useState<string | null>(null);
   function loadShare() {
     // Projetos locais E remotos: no client, as conversas moram no host — o
@@ -116,7 +117,7 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
     setShareBusy(true); setError(null); setShareUrl(null);
     try {
       setShareNote(null);
-      const r = await inviteApi?.createScoped?.({ projects: [...sel], write: shareWrite, email: shareEmail.trim() || undefined });
+      const r = await inviteApi?.createScoped?.({ projects: [...sel], write: shareWrite, email: shareEmail.trim() || undefined, ownFork: shareOwnFork });
       if (r?.ok && r.url) {
         setShareUrl(r.url); refreshInvite(); loadShare();
         if (shareEmail.trim()) {
@@ -538,6 +539,12 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                   placeholder="colega@empresa.com" type="email" spellCheck={false} />
               </label>
 
+              <div className={`share-item ${shareOwnFork ? 'on' : ''}`} style={{ maxWidth: 520 }} onClick={() => { setShareOwnFork((v) => !v); setShareUrl(null); }}>
+                <span className="share-item-name" style={{ whiteSpace: 'normal' }}>
+                  <strong>{t('team.ownFork')}</strong><br /><span style={{ color: 'var(--text-dim)', fontSize: 12 }}>{t('team.ownForkHint')}</span>
+                </span>
+                <MiniSwitch on={shareOwnFork} />
+              </div>
               <div className="share-perm">
                 <button className={`remote-tab ${shareWrite ? 'active' : ''}`} onClick={() => { setShareWrite(true); setShareUrl(null); }}>{t('team.shareWrite')}</button>
                 <button className={`remote-tab ${!shareWrite ? 'active' : ''}`} onClick={() => { setShareWrite(false); setShareUrl(null); }}>{t('team.shareRead')}</button>
@@ -627,6 +634,8 @@ export default function RemoteAccess({ onConnected }: { onConnected?: () => void
                           {g.online ? <> · <span style={{ color: 'var(--accent)' }}>{t('team.online')}</span></> : g.email ? <> · {shareStatus[g.id]?.claimed_at ? t('team.delivered') : t('team.notOpened')}</> : null}
                           {g.e ? <> · {t('team.expires', { date: new Date(g.e).toLocaleDateString() })}</> : null}</em>
                       </span>
+                      <button className={`dev-del ${g.ownFork ? 'on' : ''}`} style={g.ownFork ? { color: 'var(--accent)' } : undefined} title={g.ownFork ? t('team.ownForkOn') : t('team.ownForkOff')}
+                        onClick={async () => { await inviteApi?.grantPatch?.(g.id, g.hostId, { ownFork: !g.ownFork }).catch(() => {}); loadShare(); }}><GitBranch size={13} /></button>
                       <button className="dev-del" title={t('team.aiCfg')} onClick={() => openAiCfg(g)}><UserRound size={13} /></button>
                       <button className="dev-del" title={t('team.shareRevoke')} onClick={() => revokeGrant(g)}><Trash2 size={13} /></button>
                     </div>

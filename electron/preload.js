@@ -171,6 +171,7 @@ contextBridge.exposeInMainWorld('maestrus', {
     create: (projectId, title, forkFromConvId) => ipcRenderer.invoke('conversations:create', { projectId, title, forkFromConvId }),
     rename: (projectId, convId, title) => ipcRenderer.invoke('conversations:rename', { projectId, convId, title }),
     delete: (projectId, convId) => ipcRenderer.invoke('conversations:delete', { projectId, convId }),
+    promote: (projectId, convId) => ipcRenderer.invoke('conversations:promote', { projectId, convId }),
   },
   starter: {
     get: () => ipcRenderer.invoke('starter:get'),
@@ -379,6 +380,7 @@ contextBridge.exposeInMainWorld('maestrus', {
       ipcRenderer.on('invite:left', h);
       return () => ipcRenderer.removeListener('invite:left', h);
     },
+    grantPatch: (id, hostId, patch) => ipcRenderer.invoke('invite:grantPatch', { id, hostId, ...(patch || {}) }),
     shareStatus: () => ipcRenderer.invoke('invite:shareStatus'),
     sharedWithMe: () => ipcRenderer.invoke('invite:sharedWithMe'),
     joinShare: (id) => ipcRenderer.invoke('invite:joinShare', id),

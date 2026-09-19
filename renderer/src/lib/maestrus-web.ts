@@ -1402,7 +1402,7 @@ export function installMaestrusWeb() {
       createScoped: async (opts: any) => {
         if (!link) return { ok: false, error: 'not_connected' };
         const projects = (opts?.projects || []).map((id: string) => { const r = parseId(id); return r ? r.projectId : id; });
-        const r: any = await link.rpc('team.createScoped', { projects, write: opts?.write !== false, ttlMs: opts?.ttlMs, email: opts?.email }, 15000).catch((e: any) => ({ ok: false, error: e?.message }));
+        const r: any = await link.rpc('team.createScoped', { projects, write: opts?.write !== false, ttlMs: opts?.ttlMs, email: opts?.email, ownFork: !!opts?.ownFork }, 15000).catch((e: any) => ({ ok: false, error: e?.message }));
         if (r && r.ok && opts?.email && r.code) {
           const a = getAccount();
           const es = a ? await api('team_share', { license_key: a.licenseKey, op: 'create', email: String(opts.email), code: r.code, host_name: hostName || 'host', grant_id: r.grantId }).catch(() => null) : null;
@@ -1422,6 +1422,7 @@ export function installMaestrusWeb() {
         const ch = map[op]; if (!ch) return { ok: false, error: 'bad_op' };
         return link.rpc(ch, { grantId, code }, 20000).catch((e: any) => ({ ok: false, error: e?.message }));
       },
+      grantPatch: async (id: string, _hostId: any, patch: any) => { if (!link) return { ok: false }; return link.rpc('team.grantPatch', { id, ...(patch || {}) }, 8000).catch((e: any) => ({ ok: false, error: e?.message })); },
       shareStatus: async () => { const a = getAccount(); if (!a) return { ok: false }; const r = await api('team_share', { license_key: a.licenseKey, op: 'sent' }).catch(() => null); return r && r.ok ? { ok: true, shares: r.shares || [] } : { ok: false }; },
       sharedWithMe: async () => { const a = getAccount(); if (!a) return { ok: true, shares: [] }; const r = await api('team_share', { license_key: a.licenseKey, op: 'list' }).catch(() => null); return { ok: true, shares: (r && r.ok && r.shares) || [] }; },
       joinShare: async (id: string) => {

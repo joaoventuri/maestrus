@@ -3902,3 +3902,5 @@ html, body, #root {
 .aq-list { margin: 6px 0 0 18px; padding: 0; }
 .aq-list li { margin: 3px 0; }
 .aq-desc { color: var(--text-dim); }
+
+.nav-branch-owner { color: var(--accent); font-size: 10.5px; opacity: .85; }

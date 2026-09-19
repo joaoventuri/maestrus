@@ -960,7 +960,14 @@
     "renameProject": "Rename project",
     "delete": "Delete conversation",
     "deleteConfirm": "Delete this conversation? Its history will be removed (the project and other conversations stay).",
-    "defaultTitle": "Conversation {n}"
+    "defaultTitle": "Conversation {n}",
+    "forkedFrom": "Forked from {from} on {date} — a snapshot of that moment; it does not follow the source.",
+    "branch": "branch",
+    "promote": "Promote to trunk",
+    "promoting": "Summarizing the branch to bring it to the trunk…",
+    "promoted": "Branch promoted: the summary was delivered to the main conversation.",
+    "promotedQueued": "Branch promoted: the main conversation is busy, the summary was queued there.",
+    "promoteFail": "Could not promote the branch:"
   },
   "files": {
     "title": "Files",
@@ -1093,7 +1100,11 @@
     "typingOne": "{name} is typing…",
     "typingMany": "{n} people typing…",
     "errHostOffline": "The owner's machine is off or offline — try again when it is on.",
-    "errRelay": "Could not reach the connection server. Check your internet."
+    "errRelay": "Could not reach the connection server. Check your internet.",
+    "ownFork": "Each person on their own branch",
+    "ownForkHint": "Whoever joins gets a fork of their own (with all context so far). They cannot see your messages or those of their colleagues; you see every branch. CLAUDE.md and project memory stay shared.",
+    "ownForkOn": "Branch per person: ON (click to have everyone talk in the same conversation)",
+    "ownForkOff": "Branch per person: off (click to give each person their own fork)"
   },
   "llm": {
     "title": "LLM Accounts",

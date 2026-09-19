@@ -1438,6 +1438,63 @@ function deleteSessionFile(project, sessionId) {
   return false;
 }
 
+// ─── Fork MATERIALIZADO na criação ─────────────────────────────────────────
+// Um fork só ganhava sessão própria no primeiro turno; até lá ele LIA o .jsonl
+// da conversa de origem ao vivo — o que se escrevia na principal "vazava" pra
+// todo fork ainda não usado (e um convidado com escopo só no fork via o
+// histórico vivo da principal). Agora o fork nasce como FOTO: copia o .jsonl
+// da origem pra um id novo (reescrevendo o sessionId das entradas) e segue
+// sozinho dali. Sem origem (conversa vazia) → null e o fork nasce em branco.
+function materializeFork(project, sourceSessionId) {
+  if (!sourceSessionId) return null;
+  try {
+    const dirs = resolveSessionDirs(project);
+    let src = null;
+    for (const dir of dirs) { const f = path.join(dir, `${sourceSessionId}.jsonl`); if (fs.existsSync(f)) { src = f; break; } }
+    if (!src) return null;
+    const newId = require('crypto').randomUUID();
+    const dest = path.join(path.dirname(src), `${newId}.jsonl`);
+    const raw = fs.readFileSync(src, 'utf8');
+    fs.writeFileSync(dest, raw.split(`"sessionId":"${sourceSessionId}"`).join(`"sessionId":"${newId}"`));
+    return newId;
+  } catch (e) { console.warn('[maestrus] materializeFork falhou:', e && e.message); return null; }
+}
+
+// Cria uma conversa-fork já materializada. `forkFromConvId`: 'main' | <convId> | null.
+// `extra` vai pro registro da conversa (ex.: branchOf/branchOwner do modo "ramo por pessoa").
+function createFork(pid, { title, forkFromConvId, extra } = {}) {
+  const p = projectStore.get(pid);
+  if (!p) return null;
+  let source = null; let fromTitle = null;
+  if (forkFromConvId === 'main') { source = p.sessionId || null; fromTitle = p.name; }
+  else if (forkFromConvId) {
+    const src = (projectStore.listConversations(pid) || []).find((c) => c.id === forkFromConvId);
+    source = (src && (src.sessionId || src.forkFrom)) || null; fromTitle = src ? src.title : null;
+  }
+  const conv = projectStore.createConversation(pid, { title, forkFrom: source });
+  if (!conv) return null;
+  const sid = materializeFork(p, source);
+  const patch = { ...(extra || {}), forkedAt: Date.now(), forkFromTitle: fromTitle || undefined };
+  if (sid) patch.sessionId = sid;
+  return projectStore.patchConversation(pid, conv.id, patch) || conv;
+}
+
+// Migração: forks antigos ainda "pendentes" (sem sessão própria) viram foto AGORA.
+function materializePendingForks() {
+  let n = 0;
+  try {
+    for (const p of projectStore.list()) {
+      for (const c of (p.conversations || [])) {
+        if (c && !c.sessionId && c.forkFrom) {
+          const sid = materializeFork(p, c.forkFrom);
+          if (sid) { projectStore.patchConversation(p.id, c.id, { sessionId: sid, forkedAt: c.forkedAt || Date.now() }); n++; }
+        }
+      }
+    }
+  } catch {}
+  return n;
+}
+
 // Compactação in-place "igual ao Claude": anexa um marcador system/compact_boundary
 // (parentUuid:null → vira raiz do novo leaf chain, então o --resume só replica a
 // partir daqui) seguido de uma mensagem user com isCompactSummary contendo o resumo.
@@ -1521,7 +1578,7 @@ module.exports = {
   setMainWindow, setOrchestrateInfo, setPostTurnHook, setLockChangeHook,
   emit, // barramento compartilhado — o codex-pty emite pelos MESMOS canais
   VOICE_DIRECTIVE, MAESTRUS_PERSONA, // reusados pelo codex-pty (modo voz)
-  send, kill, killAll, loadHistory,
+  send, kill, killAll, loadHistory, materializeFork, createFork, materializePendingForks,
   dispatchOneShot, deleteSessionFile, compactSessionFile, backupSessionFile, restoreSessionFile, listSessionBaks, onEvent, findClaudeBin, resetClaudeBin, warmClaudeBin, isBusy, sessionMeta,
   currentHostId, isLockActive, LOCK_TTL_MS, clearMemBlock, sessionFilePath,
   buildSysAppend, // exportado p/ teste: send e dispatchOneShot têm que casar

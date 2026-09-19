@@ -680,7 +680,7 @@ app.whenReady().then(async () => {
   // "Be a Host always on" (default): se logado, vira host sozinho pra a máquina
   // já aparecer pros outros dispositivos da conta (web/mobile/outro desktop).
   // Pequeno atraso pra a janela e o estado assentarem antes de anunciar.
-  setTimeout(() => { pruneGrants(); maybeAutoHost(); resumeInvites(); claimEmailShares(); autoReconnectShares().catch(() => {}); }, 1500);
+  setTimeout(() => { try { claudePty.materializePendingForks(); } catch {} pruneGrants(); maybeAutoHost(); resumeInvites(); claimEmailShares(); autoReconnectShares().catch(() => {}); }, 1500);
   // Execuções em segundo plano de sessões anteriores: os processos escrevem
   // direto em disco e NÃO morrem com o app — reidrata pra UI voltar a vê-los.
   try { runStore.rehydrate(); } catch {}
@@ -1585,13 +1585,7 @@ ipcMain.handle('conversations:create', async (_e, { projectId, title, forkFromCo
   }
   const p = projectStore.get(projectId);
   if (!p) throw new Error('Projeto não encontrado');
-  let forkFrom = null;
-  if (forkFromConvId === 'main') forkFrom = p.sessionId || null;
-  else if (forkFromConvId) {
-    const src = (projectStore.listConversations(projectId) || []).find((c) => c.id === forkFromConvId);
-    forkFrom = (src && (src.sessionId || src.forkFrom)) || null;
-  }
-  const conv = projectStore.createConversation(projectId, { title, forkFrom });
+  const conv = claudePty.createFork(projectId, { title, forkFromConvId });   // nasce como FOTO da origem
   const next = projectStore.get(projectId);
   if (next) remoteHost.broadcastProjectPatch(next);
   return conv;
@@ -1920,7 +1914,7 @@ ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
     const hostId = [...dids][0];
     const shortIds = remotes.map((id) => id.split(':').slice(2).join(':'));
     try {
-      const r = await remoteClient.teamCreateScoped(hostId, { projects: shortIds, write: opts.write !== false, ttlMs: opts.ttlMs, email: opts.email ? String(opts.email) : undefined });
+      const r = await remoteClient.teamCreateScoped(hostId, { projects: shortIds, write: opts.write !== false, ttlMs: opts.ttlMs, email: opts.email ? String(opts.email) : undefined, ownFork: !!opts.ownFork });
       if (!(r && r.ok)) return { ok: false, error: (r && r.error) || 'host_failed' };
       if (opts.email && r.code) {
         const es = await cloud.teamShare('create', { email: String(opts.email), code: r.code, host_name: 'host', grant_id: r.grantId });
@@ -1947,7 +1941,7 @@ ipcMain.handle('invite:createScoped', async (_e, opts = {}) => {
   try {
     const all = projectStore.getSetting('invite_grants') || [];
     const email = opts.email ? String(opts.email).slice(0, 190) : undefined;
-    all.push({ id: sc.grantId, p: projects, w: opts.write !== false, e: sc.expiresAt, label: String(opts.label || '').slice(0, 60), email, createdAt: Date.now() });
+    all.push({ id: sc.grantId, p: projects, w: opts.write !== false, e: sc.expiresAt, label: String(opts.label || '').slice(0, 60), email, ownFork: !!opts.ownFork, createdAt: Date.now() });
     projectStore.setSetting('invite_grants', all);
     try { remoteHost.inheritTeamAi(sc.grantId, email, all); } catch {}
   } catch {}
@@ -1976,6 +1970,26 @@ ipcMain.handle('team:typing', async (_e, { projectId, typing }) => {
   }
   try { remoteHost.broadcastTyping('host', String(projectId || ''), !!typing); } catch {}
   return { ok: true };
+});
+// Opção de um acesso existente (hoje: ramo por pessoa). Local → mesmo handler do host.
+ipcMain.handle('invite:grantPatch', async (_e, { id, hostId, ownFork }) => {
+  if (hostId) { try { return await remoteClient.rpc(hostId, 'team.grantPatch', { id, ownFork }, 8000); } catch (e) { return { ok: false, error: String(e && e.message || e) }; } }
+  try {
+    const all = projectStore.getSetting('invite_grants') || [];
+    const g = all.find((x) => x && x.id === String(id));
+    if (!g) return { ok: false, error: 'not_found' };
+    g.ownFork = !!ownFork; projectStore.setSetting('invite_grants', all);
+    try { remoteHost.dropGrantBindingsSoft(String(id)); } catch {}
+    return { ok: true };
+  } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+});
+// Promover um ramo ao tronco (dono).
+ipcMain.handle('conversations:promote', async (_e, { projectId, convId }) => {
+  if (remoteClient.isRemote(projectId)) {
+    const m = /^remote:([^:]+):(.+)$/.exec(projectId);
+    try { return await remoteClient.rpc(m[1], 'conversations.promote', { projectId: m[2], convId }, 300000); } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+  }
+  return require('./branch-promote').promote(projectId, convId);
 });
 ipcMain.handle('invite:shareStatus', async () => {
   try { if (!(cloud.getAccount && cloud.getAccount())) return { ok: false }; const r = await cloud.teamShare('sent'); return r && r.ok ? { ok: true, shares: r.shares || [] } : { ok: false }; }

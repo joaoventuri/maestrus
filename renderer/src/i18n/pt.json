@@ -960,7 +960,14 @@
     "renameProject": "Renomear projeto",
     "delete": "Excluir conversa",
     "deleteConfirm": "Excluir esta conversa? O histórico dela será removido (o projeto e as outras conversas ficam).",
-    "defaultTitle": "Conversa {n}"
+    "defaultTitle": "Conversa {n}",
+    "forkedFrom": "Ramificado de {from} em {date} — é uma foto daquele momento, não acompanha a origem.",
+    "branch": "ramo",
+    "promote": "Promover ao tronco",
+    "promoting": "Resumindo o ramo para levar ao tronco…",
+    "promoted": "Ramo promovido: o resumo foi entregue à conversa principal.",
+    "promotedQueued": "Ramo promovido: a conversa principal está ocupada, o resumo entrou na fila dela.",
+    "promoteFail": "Não consegui promover o ramo:"
   },
   "files": {
     "title": "Arquivos",
@@ -1093,7 +1100,11 @@
     "typingOne": "{name} está escrevendo…",
     "typingMany": "{n} pessoas escrevendo…",
     "errHostOffline": "A máquina do dono está desligada ou sem internet — tente de novo quando ela estiver ligada.",
-    "errRelay": "Não consegui chegar ao servidor de conexão. Verifique sua internet."
+    "errRelay": "Não consegui chegar ao servidor de conexão. Verifique sua internet.",
+    "ownFork": "Cada pessoa no próprio ramo",
+    "ownForkHint": "Quem entra ganha um fork só dele (com todo o contexto até aqui). Não vê suas mensagens nem as dos colegas; você vê todos os ramos. CLAUDE.md e memória do projeto continuam comuns.",
+    "ownForkOn": "Ramo por pessoa: LIGADO (clique para todos falarem na mesma conversa)",
+    "ownForkOff": "Ramo por pessoa: desligado (clique para cada pessoa ter o próprio fork)"
   },
   "llm": {
     "title": "Contas LLM",

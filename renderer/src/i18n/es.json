@@ -960,7 +960,14 @@
     "renameProject": "Renombrar proyecto",
     "delete": "Eliminar conversación",
     "deleteConfirm": "¿Eliminar esta conversación? Su historial se eliminará (el proyecto y las demás conversaciones se mantienen).",
-    "defaultTitle": "Conversación {n}"
+    "defaultTitle": "Conversación {n}",
+    "forkedFrom": "Ramificado de {from} el {date} — es una foto de ese momento, no sigue al origen.",
+    "branch": "rama",
+    "promote": "Promover al tronco",
+    "promoting": "Resumiendo la rama para llevarla al tronco…",
+    "promoted": "Rama promovida: el resumen fue entregado a la conversación principal.",
+    "promotedQueued": "Rama promovida: la conversación principal está ocupada, el resumen entró en su cola.",
+    "promoteFail": "No pude promover la rama:"
   },
   "files": {
     "title": "Archivos",
@@ -1093,7 +1100,11 @@
     "typingOne": "{name} está escribiendo…",
     "typingMany": "{n} personas escribiendo…",
     "errHostOffline": "La máquina del dueño está apagada o sin internet — intenta de nuevo cuando esté encendida.",
-    "errRelay": "No pude llegar al servidor de conexión. Revisa tu internet."
+    "errRelay": "No pude llegar al servidor de conexión. Revisa tu internet.",
+    "ownFork": "Cada persona en su propia rama",
+    "ownForkHint": "Quien entra recibe un fork solo suyo (con todo el contexto hasta aquí). No ve tus mensajes ni los de sus colegas; tú ves todas las ramas. CLAUDE.md y la memoria del proyecto siguen siendo comunes.",
+    "ownForkOn": "Rama por persona: ACTIVADA (clic para que todos hablen en la misma conversación)",
+    "ownForkOff": "Rama por persona: desactivada (clic para que cada persona tenga su propio fork)"
   },
   "llm": {
     "title": "Cuentas LLM",

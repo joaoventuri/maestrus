@@ -688,7 +688,7 @@ function Projects({ t, projects, host, onPick, onRefresh, onDisconnect, onAccoun
                   <button key={cid} className={`m-conv ${activity[cid]?.status === 'unread' ? 'has-unread' : ''}`} onClick={() => openConv(p, c)}>
                     <span className="m-conv-line" />
                     <MessageSquare size={13} className="m-conv-ic" />
-                    <span className="m-conv-name">{c.title}</span>
+                    <span className="m-conv-name" title={c.forkedAt ? t('conv.forkedFrom', { from: c.forkFromTitle || p.name, date: new Date(c.forkedAt).toLocaleString() }) : undefined}>{c.title}</span>
                     <ActivityIndicator activity={activity[cid] || null} />
                   </button>
                 );

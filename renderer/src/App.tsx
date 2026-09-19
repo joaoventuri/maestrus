@@ -46,6 +46,7 @@ export default function App() {
   // Acesso compartilhado encerrado pelo dono (revogado/vencido): avisa em vez
   // de os projetos só sumirem da lista.
   const [leftNotice, setLeftNotice] = useState<{ reason: string } | null>(null);
+  const [promoteNote, setPromoteNote] = useState<string | null>(null);
   useEffect(() => {
     const off = (window as any).maestrus?.invite?.onLeft?.((r: any) => { setLeftNotice({ reason: r?.reason || 'revoked' }); reloadProjects(); });
     return () => { try { off && off(); } catch {} };
@@ -373,9 +374,18 @@ export default function App() {
   }
 
   // Ações de conversas (forks) vindas da sidebar (botão direito / accordion).
-  async function handleConvAction(action: 'fork' | 'forkConv' | 'renameProject' | 'renameConv' | 'deleteConv', projectId: string, convId?: string, value?: string) {
+  async function handleConvAction(action: 'fork' | 'forkConv' | 'renameProject' | 'renameConv' | 'deleteConv' | 'promoteConv', projectId: string, convId?: string, value?: string) {
     const conv = (window.maestrus as any).conversations;
     try {
+      if (action === 'promoteConv' && convId) {
+        // Leva o resumo do ramo pro tronco. Roda no host; o resultado chega como
+        // um turno normal na conversa principal.
+        setPromoteNote(t('conv.promoting'));
+        const r = await conv.promote(projectId, convId);
+        setPromoteNote(r?.ok ? (r.queued ? t('conv.promotedQueued') : t('conv.promoted')) : `${t('conv.promoteFail')} ${r?.error || ''}`);
+        setTimeout(() => setPromoteNote(null), 6000);
+        return;
+      }
       if (action === 'fork' || action === 'forkConv') {
         const p = safeProjects.find((pp) => pp.id === projectId);
         const src = action === 'forkConv'
@@ -457,6 +467,7 @@ export default function App() {
           <strong>{t('team.leftTitle')}</strong> — {leftNotice.reason === 'expired' ? t('team.leftExpired') : t('team.leftRevoked')}
         </div>
       )}
+      {promoteNote && <div className="demo-banner" onClick={() => setPromoteNote(null)} style={{ cursor: 'pointer' }}>{promoteNote}</div>}
       <UpdateBanner />
       <GlobalRunsIndicator />
       {isDemo && (

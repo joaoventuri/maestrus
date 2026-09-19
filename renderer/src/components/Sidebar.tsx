@@ -25,7 +25,7 @@ interface Props {
   onDelete: (id: string) => void;
   onRefresh?: () => void;   // botãozinho de refresh da lista de projetos
   // Ações de conversas (forks) e rename — executadas pelo App (dono do estado).
-  onConvAction?: (action: 'fork' | 'forkConv' | 'renameProject' | 'renameConv' | 'deleteConv', projectId: string, convId?: string, value?: string) => void;
+  onConvAction?: (action: 'fork' | 'forkConv' | 'renameProject' | 'renameConv' | 'deleteConv' | 'promoteConv', projectId: string, convId?: string, value?: string) => void;
   mode?: 'server' | 'client' | null;
   cloudFirst?: boolean;   // web = "a cara" do container: esconde banner/badges de conexão
   clientHostName?: string | null;
@@ -275,7 +275,9 @@ export default function Sidebar({
                     onBlur={commitRename}
                   />
                 ) : (
-                  <span className="nav-item-name">{c.title}</span>
+                  <span className="nav-item-name" title={c.forkedAt ? t('conv.forkedFrom', { from: c.forkFromTitle || p.name, date: new Date(c.forkedAt).toLocaleString() }) : undefined}>
+                    {c.title}{c.branchOwner ? <span className="nav-branch-owner"> · {t('conv.branch')}</span> : null}
+                  </span>
                 )}
                 <ActivityIndicator activity={activity[cid] || null} />
                 <button
@@ -315,6 +317,9 @@ export default function Sidebar({
                 </button>
                 <button className="ctx-item" onClick={() => startRename(mp.id, mc.id, mc.title)}>
                   <Pencil size={13} /> {t('conv.rename')}
+                </button>
+                <button className="ctx-item" onClick={() => { setMenu(null); onConvAction && onConvAction('promoteConv' as any, mp.id, mc.id); }}>
+                  <GitBranch size={13} style={{ transform: 'rotate(180deg)' }} /> {t('conv.promote')}
                 </button>
                 <button className="ctx-item danger" onClick={() => { setMenu(null); onConvAction && onConvAction('deleteConv', mp.id, mc.id); }}>
                   <Trash2 size={13} /> {t('conv.delete')}

@@ -161,9 +161,53 @@ function teamAiProfileFor(from) {
 // Recriar o acesso do MESMO e-mail (revogou e gerou de novo) não pode
 // perder a conta do Claude configurada: o pool do acesso anterior desse
 // e-mail passa pro novo. Sem isso o time caía silenciosamente na conta do host.
+// ─── RAMO POR PESSOA ("mesmo cérebro, conversas separadas") ────────────────
+// Acesso com `ownFork`: quem entra NÃO cai na conversa principal do dono —
+// ganha um fork só dele (foto do tronco no momento em que entrou). O dono vê
+// todos os ramos; cada pessoa vê o seu. O que é comum (CLAUDE.md, memória do
+// projeto, o código) já é compartilhado por natureza: mesma pasta.
+// Pessoa = nome que ela informou (o mesmo convite serve ao time inteiro);
+// sem nome ainda, o device — e o ramo é re-chaveado quando o nome chegar.
+function resolveOwnBranches(rec, grantPids, from, name) {
+  const out = new Set();
+  const all = projectStore.getSetting('invite_grants') || [];
+  const live = all.find((x) => x && x.id === rec.id) || rec;
+  live.branches = live.branches || {};
+  const nameKey = name ? 'n:' + name.toLowerCase() : null;
+  const devKey = 'd:' + from;
+  let dirty = false;
+  for (const entry of grantPids) {
+    const i = entry.indexOf('#');
+    const base = i > 0 ? entry.slice(0, i) : entry; const conv = i > 0 ? entry.slice(i + 1) : null;
+    if (conv && conv !== 'main') { out.add(entry); continue; }        // fork explícito = sala compartilhada, fica como está
+    const proj = projectStore.get(base);
+    if (!proj) continue;
+    const map = (live.branches[base] = live.branches[base] || {});
+    const exists = (cid) => !!cid && (proj.conversations || []).some((c) => c.id === cid);
+    if (nameKey && !exists(map[nameKey]) && exists(map[devKey])) {    // o nome chegou depois: adota o ramo do device
+      map[nameKey] = map[devKey]; delete map[devKey]; dirty = true;
+      try { projectStore.patchConversation(base, map[nameKey], { title: name, branchOwner: name }); } catch {}
+    }
+    const key = nameKey || devKey;
+    if (!exists(map[key])) {
+      const label = name || (rec.email ? String(rec.email).split('@')[0] : 'Convidado');
+      const c = claudePty.createFork(base, { title: label, forkFromConvId: 'main', extra: { branchOwner: label, branchGrant: rec.id } });
+      if (!c) continue;
+      map[key] = c.id; dirty = true;
+      try { const next = projectStore.get(base); if (next) broadcastProjectPatch(next); } catch {}
+    }
+    out.add(base + '#' + map[key]);
+  }
+  if (dirty) { try { projectStore.setSetting('invite_grants', all); } catch {} }
+  return out;
+}
+
 // Revogar um acesso solta as contas dele: perfis "Equipe:" (criados só pra
 // aquele acesso) são apagados; conta do dono reaproveitada volta a ser dele.
 // Sem isso o `team_bound` travava a conta do dono pra sempre, em silêncio.
+function dropGrantBindingsSoft(grantId) {
+  for (const [did, b] of teamBindings) if (b && b.grantId === String(grantId)) { teamBindings.delete(did); subscribers.delete(did); }
+}
 function cleanupGrantAi(grantId) {
   const key = 'g:' + String(grantId);
   const pool = teamAiPool(key);
@@ -322,7 +366,7 @@ function safeProject(p) {
     model: p.model || 'default', thinkingMode: p.thinkingMode || 'medium',
     permissionMode: p.permissionMode || 'default', engine: p.engine || 'claude',
     sessionId: p.sessionId || null,
-    conversations: (p.conversations || []).map((c) => ({ id: c.id, title: c.title, createdAt: c.createdAt })),
+    conversations: (p.conversations || []).map((c) => ({ id: c.id, title: c.title, createdAt: c.createdAt, forkedAt: c.forkedAt || null, forkFromTitle: c.forkFromTitle || null, branchOwner: c.branchOwner || null })),
   };
 }
 
@@ -359,7 +403,7 @@ const OWNER_ONLY_CHANNELS = new Set([
   'claude.logout', 'claude.usage', 'claude.version', 'persona.set',
   // Compartilhamento com escopo: criar/revogar acesso é poder de dono. Um
   // convidado (de share OU de grant) jamais emite convites da sala.
-  'team.createScoped', 'team.grants', 'team.revokeGrant',
+  'team.createScoped', 'team.grants', 'team.revokeGrant', 'team.grantPatch', 'conversations.promote',
   'team.ai.adminStatus', 'team.ai.adminLoginStart', 'team.ai.adminLoginState',
   'team.ai.adminLoginCode', 'team.ai.adminLoginCancel', 'team.ai.adminUnbind',
   'team.ai.adminBindExisting', 'team.ai.adminListProfiles',
@@ -491,9 +535,10 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
       const rec = activeGrants().find((x) => x.id === g.id);
       if (!rec) return reply({ ok: false, error: 'revoked' });
       const sid = nodeCrypto.randomBytes(12).toString('base64url');
-      const pids = new Set(g.p.map(String));
       const exp = Number(g.e || rec.e) || null;
       if (exp && Date.now() > exp) return reply({ ok: false, error: 'expired' });
+      let pids = new Set(g.p.map(String));
+      if (rec.ownFork) pids = resolveOwnBranches(rec, pids, from, name);
       teamBindings.set(from, { pids, write: !!g.w, name, sid, grantId: g.id, exp });
       subscribers.set(from, { pids, write: !!g.w });
       // Presença com identidade: o dono vê "tecnologia@ · Maria", não "4f2a1b".
@@ -760,7 +805,7 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
         try {
           const all = projectStore.getSetting('invite_grants') || [];
           const email = String(payload.email || '').slice(0, 190) || undefined;
-          all.push({ id: sc.grantId, p: projects, w: payload.write !== false, e: sc.expiresAt, email, createdAt: Date.now() });
+          all.push({ id: sc.grantId, p: projects, w: payload.write !== false, e: sc.expiresAt, email, ownFork: !!payload.ownFork, createdAt: Date.now() });
           projectStore.setSetting('invite_grants', all);
           inheritTeamAi(sc.grantId, email, all);
         } catch {}
@@ -772,6 +817,20 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
           .map((g) => ({ ...g, aiBound: teamAiPool('g:' + g.id).length > 0, aiCount: teamAiPool('g:' + g.id).length, online: [...teamBindings.values()].some((b) => b.grantId === g.id) }));
         return reply({ ok: true, grants: all });
       }
+      case 'team.grantPatch': {
+        // Hoje só `ownFork`. Mudou → derruba os bindings do acesso: no próximo
+        // RPC o device refaz o hello e já entra (ou sai) do ramo próprio.
+        try {
+          const all = projectStore.getSetting('invite_grants') || [];
+          const g = all.find((x) => x && x.id === String(payload.id));
+          if (!g) return reply({ ok: false, error: 'not_found' });
+          if (payload.ownFork !== undefined) g.ownFork = !!payload.ownFork;
+          projectStore.setSetting('invite_grants', all);
+        } catch (e) { return reply({ ok: false, error: String(e && e.message || e) }); }
+        for (const [did, b] of teamBindings) if (b && b.grantId === String(payload.id)) { teamBindings.delete(did); subscribers.delete(did); }
+        return reply({ ok: true });
+      }
+      case 'conversations.promote': return reply(await require('./branch-promote').promote(payload.projectId, payload.convId));
       case 'team.revokeGrant': {
         try {
           const all = projectStore.getSetting('invite_grants') || [];
@@ -920,13 +979,7 @@ async function handleRpc(f, reply, fail, viaTeamRoom = false) {
       case 'conversations.create': {
         const p = projectStore.get(payload.projectId);
         if (!p) return fail('Projeto não encontrado');
-        let forkFrom = null;
-        if (payload.forkFromConvId === 'main') forkFrom = p.sessionId || null;
-        else if (payload.forkFromConvId) {
-          const src = (projectStore.listConversations(payload.projectId) || []).find((c) => c.id === payload.forkFromConvId);
-          forkFrom = (src && (src.sessionId || src.forkFrom)) || null;
-        }
-        const conv = projectStore.createConversation(payload.projectId, { title: payload.title, forkFrom });
+        const conv = claudePty.createFork(payload.projectId, { title: payload.title, forkFromConvId: payload.forkFromConvId });
         const next = projectStore.get(payload.projectId);
         if (next) broadcastProjectPatch(next);
         return reply(conv);
@@ -1395,6 +1448,7 @@ function setOnState(fn) { onState = fn; }
 function subscriberCount() { return subscribers.size; }
 
 module.exports = {
+  resolveOwnBranches, dropGrantBindingsSoft,
   inheritTeamAi, cleanupGrantAi, broadcastProjectRemoved, broadcastEvent, setOnProjectsChanged,
   setOwnerName, setOnLocalEvent, roster, broadcastTyping,
   setTeamSecret, teamAiAdmin, dropGrantBindings, startTeamRoom, stopTeamRoom, teamRoomActive, setEnsureTeamRoom, start, stop, refreshProjects, updateToken, getState, isHealthy, setOnState, broadcastProjectPatch, subscriberCount };
